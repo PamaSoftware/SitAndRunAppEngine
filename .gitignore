@@ -1,5 +1,7 @@
 # IntelliJ
 *.iml
 .idea/
+eclipse-launch-profiles/
+
 # Maven
 target/
