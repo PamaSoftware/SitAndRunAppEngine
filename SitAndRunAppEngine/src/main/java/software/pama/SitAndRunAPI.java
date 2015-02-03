@@ -26,12 +26,12 @@ public class SitAndRunAPI {
     }
 
     @ApiMethod(name = "signIn", path = "signIn")
-    public boolean signIn(User user) throws OAuthRequestException {
+    public String signIn(User user) throws OAuthRequestException {
         if (user == null) {
             throw new OAuthRequestException("User was not specified.");
         }
-        //TODO sprawdzenie czy user.getEmail() jest w bazie, jesli tak to zwracamy true i wyciagamy dane do memcache
-        return true;
+        //TODO sprawdzenie czy user.getEmail() jest w bazie, jesli tak to zwracamy login i wyciagamy dane do memcache
+        return "";
     }
 
     @ApiMethod(name = "signUp", path = "signUp")
@@ -51,4 +51,12 @@ public class SitAndRunAPI {
         //TODO sprawdzenie czy user.getEmail() jest w bazie: nie - zwracamy false, tak - sprawdzamy czy login przynalezy do maila: nie - false, tak - zwracamy true usuwamy uzytkownika
         return true;
     }
+
+    //TODO obsługa pytan o dane profilowe (login, avatar, historia biegow, statystyki, osiagniecia, lista znajomych)
+
+    //TODO obsluga przyjecia wyniku biegu (analiza racjonalnosci danych, dodanie wpisu do historii)
+
+    //TODO obsluga biegow real time
+
+    //TODO obsluga interakcji ze znajomymi z aplikacji
 }
