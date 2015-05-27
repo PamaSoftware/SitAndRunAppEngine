@@ -1,9 +1,11 @@
 package software.pama;
 
+import java.io.Serializable;
+
 /**
  * Created by Pawel on 2015-04-03.
  */
-public class Preferences{
+public class Preferences implements Serializable{
     private int aspiration;
     private int reservation;
 

@@ -10,6 +10,9 @@ import com.googlecode.objectify.ObjectifyFactory;
 public class OfyService {
     static {
         factory().register(DatastoreProfile.class);
+        factory().register(DatastoreProfileHistory.class);
+        factory().register(DatastoreTotalHistory.class);
+        factory().register(MemcacheRunInfo.class);
     }
 
     public static Objectify ofy() {

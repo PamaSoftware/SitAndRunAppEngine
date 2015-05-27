@@ -1,9 +1,11 @@
 package software.pama;
 
+import java.io.Serializable;
+
 /**
  * Created by Pawel on 2015-03-06.
  */
-public class Profile {
+public class Profile implements Serializable {
     private String login = null;
     private int winsAmount = 0;
     private int raceAmount = 0;
