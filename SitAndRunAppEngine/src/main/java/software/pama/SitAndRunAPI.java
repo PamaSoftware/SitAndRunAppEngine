@@ -120,6 +120,7 @@ public class SitAndRunAPI {
      */
     @ApiMethod(name = "deleteAccount", path = "deleteAccount")
     public WrappedBoolean deleteAccount(User user) throws OAuthRequestException{
+        cancelRun(user);
         //TODO transakcja usuniecia calej historii danego uzytkownika wraz z uzytkownikiem
         Key key = Key.create(DatastoreProfile.class, user.getEmail());
         ofy().delete().key(key).now();
@@ -366,6 +367,7 @@ public class SitAndRunAPI {
 
         if(memcacheRunInfo.isRunWithRandom){
             //uaktualnienie wpisu
+            //sprawdzenie wygranej/przegranej
             //zapis do memcache oraz jesli dawno to do bazy
             //przewidzenie pozycji przeciwnika
             RunResult hostRunResult = memcacheRunInfo.getHostRunResult();
@@ -374,12 +376,83 @@ public class SitAndRunAPI {
             else
                 hostRunResult.addResults(runResult.getResults());
             memcacheRunInfo.setHostRunResult(hostRunResult);
+
+            RunResultPiece lastHostResult = hostRunResult.getResults().get(hostRunResult.getResults().size()-1);
+            RunResultPiece lastOpponentResult = memcacheRunInfo.getOpponentRunResult().getResults().get(memcacheRunInfo.getOpponentRunResult().getResults().size()-1);
+            if(lastHostResult.getTime() > lastOpponentResult.getTime()) {
+                //przegrana
+                Key key = Key.create(DatastoreProfile.class, user.getEmail());
+                DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
+                if(datastoreProfile == null)
+                    return null;
+
+                //dodajemy statystyki
+                datastoreProfile.addLoseRace();
+
+                float avgSpeed =  (float)lastHostResult.getDistance()/(float)lastHostResult.getTime()*(float)3600/(float)1000;
+                //dodajemy historie uzytkownika
+                DatastoreProfileHistory profileHistory = new DatastoreProfileHistory();
+                profileHistory.setParent(key);
+                profileHistory.setAverageSpeed(avgSpeed);
+                profileHistory.setTotalDistance(lastHostResult.getDistance());
+                profileHistory.setDateOfRun(new Date());
+                profileHistory.setIsWinner(false);
+                profileHistory.setRunResult(memcacheRunInfo.getHostRunResult());
+
+                //dodajemy historie ogolna
+                DatastoreTotalHistory totalHistory = new DatastoreTotalHistory();
+                totalHistory.setAverageSpeed(avgSpeed);
+                totalHistory.setTotalDistance(lastHostResult.getDistance());
+                totalHistory.setRunResult(memcacheRunInfo.getHostRunResult());
+
+                //zapisujemy do bazy
+                ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
+
+                cancelRun(user);
+
+                return new RunResultPiece(-1, 0);
+            }
+
+            if(lastHostResult.getDistance() > lastOpponentResult.getDistance()) {
+                //wygrana
+                Key key = Key.create(DatastoreProfile.class, user.getEmail());
+                DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
+                if(datastoreProfile == null)
+                    return null;
+
+                //dodajemy statystyki
+                datastoreProfile.addWinRace();
+
+                float avgSpeed = (float)lastHostResult.getDistance()/(float)lastHostResult.getTime()*(float)3600/(float)1000;
+                //dodajemy historie uzytkownika
+                DatastoreProfileHistory profileHistory = new DatastoreProfileHistory();
+                profileHistory.setParent(key);
+                profileHistory.setAverageSpeed(avgSpeed);
+                profileHistory.setTotalDistance(lastHostResult.getDistance());
+                profileHistory.setDateOfRun(new Date());
+                profileHistory.setIsWinner(false);
+                profileHistory.setRunResult(memcacheRunInfo.getHostRunResult());
+
+                //dodajemy historie ogolna
+                DatastoreTotalHistory totalHistory = new DatastoreTotalHistory();
+                totalHistory.setAverageSpeed(avgSpeed);
+                totalHistory.setTotalDistance(lastHostResult.getDistance());
+                totalHistory.setRunResult(memcacheRunInfo.getHostRunResult());
+
+                //zapisujemy do bazy
+                ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
+
+                cancelRun(user);
+
+                return new RunResultPiece(-1, 1);
+            }
+
             syncCache.put(p.getLogin(), memcacheRunInfo);
             if(new Date().getTime() - memcacheRunInfo.getLastDatastoreSavedTime().getTime() > 1000*30) {
                 memcacheRunInfo.setLastDatastoreSavedTime(new Date());
                 ofy().save().entity(memcacheRunInfo).now();
             }
-            //TODO uwzglednienie wygranej
+
             return makePrediction(memcacheRunInfo, true, forecast);
         } else {
             //TODO bezpiecznie watkowo
@@ -501,7 +574,7 @@ public class SitAndRunAPI {
                 }
                 if(i < 2)
                     return new RunResultPiece(0,0);
-                //jesli petla nie zakonczyla sie na breaku (czyli przy naszej predykcji przeciwnik juz osiiagnal mete)
+                //jesli petla nie zakonczyla sie na breaku (czyli przy naszej predykcji przeciwnik juz osiagnal mete)
                 if(i == opponentRunPiecesSize) {
                     predictionTime = lastHostTime;
                     //dekrementujemy, zeby nie wyjsc poza zakres

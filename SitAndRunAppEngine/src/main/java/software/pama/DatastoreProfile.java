@@ -69,4 +69,13 @@ public class DatastoreProfile {
     public int getWinsAmount() {
         return winsAmount;
     }
+
+    public void addWinRace() {
+        winsAmount++;
+        raceAmount++;
+    }
+
+    public void addLoseRace() {
+        raceAmount++;
+    }
 }

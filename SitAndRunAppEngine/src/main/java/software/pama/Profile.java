@@ -49,4 +49,13 @@ public class Profile implements Serializable {
     public int getWinsAmount() {
         return winsAmount;
     }
+
+    public void addWinRace() {
+        winsAmount++;
+        raceAmount++;
+    }
+
+    public void addLoseRace() {
+        raceAmount++;
+    }
 }
