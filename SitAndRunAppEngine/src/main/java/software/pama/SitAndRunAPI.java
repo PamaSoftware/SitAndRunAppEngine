@@ -379,6 +379,7 @@ public class SitAndRunAPI {
                 memcacheRunInfo.setLastDatastoreSavedTime(new Date());
                 ofy().save().entity(memcacheRunInfo).now();
             }
+            //TODO uwzglednienie wygranej
             return makePrediction(memcacheRunInfo, true, forecast);
         } else {
             //TODO bezpiecznie watkowo
@@ -463,36 +464,63 @@ public class SitAndRunAPI {
     }
 
     private RunResultPiece makePrediction(MemcacheRunInfo memcacheRunInfo, boolean predictionForHost, int forecast) {
-        //prediction is based on 5 last infoPieces
+        /*
+        Pobieramy rozmiar zebranych wynikow dla hosta i przeciwnika.
+        Rozpatrujemy przewidywanie dla hosta (czyli analizujemy bieg jego przeciwnika)
+            Jezeli mamy rozpatrywanie dla hosta to moze to byc bieg z obcym lub ze znajomym
+            Bieg z obcym:
+                //nasz oponent ma w pelni wypelniony bieg.
+                Sprawdzamy czy jego ostatni element nie jest wczesniej niz nasz ostatni czas dla jakiego chcemy pozycje przeciwnika.
+                Tak:
+                    oznacza to nasza przegrana zwracamy ostatnie polozenie przeciwnika.
+
+                Znajdujemy 2 kawalki biegu przeciwnika, 1 poprzedzajacy nasz aktualny czas, 2 bedacy wyprzedzeniem naszej predykcji wyliczamy polozenie pomiedzy.
+                Iterujemy po wynikach przeciwnika az do wyniku wyprzedzajacego nasza predykcje.
+                Jesli liczba kawalkow wieksza od 1:
+                    Sprawdzamy czy wyszlismy z petli na break, jesli nie to znaczy ze przy naszej predykcji przeciwnik juz osiuagnal mete, wtedy rozpatrujemy bez uwzglednienia predykcji.
+                Jesli 0 lub 1 kawalek:
+                    zwracamy 0,0;
+            Bieg ze znajomym:
+        Rozpatrujemy przewidywanie dla niehosta (czyli analizujemy bieg hosta)
+         */
+        int hostRunPiecesSize = memcacheRunInfo.getHostRunResult().getResults().size();
+        int opponentRunPiecesSize = memcacheRunInfo.getOpponentRunResult().getResults().size();
 
         if(predictionForHost) {
-            int hostRunPiecesSize = memcacheRunInfo.getHostRunResult().getResults().size();
-            int opponentRunPiecesSize = memcacheRunInfo.getOpponentRunResult().getResults().size();
-            int lastHostTime = memcacheRunInfo.getHostRunResult().getResults().get(hostRunPiecesSize - 1).getTime();
-            int i;
-            for(i = 0; i<opponentRunPiecesSize; ++i) {
-                    if(memcacheRunInfo.getOpponentRunResult().getResults().get(i).getTime() > lastHostTime+forecast)
+            if(memcacheRunInfo.isRunWithRandom) {
+                int lastHostTime = memcacheRunInfo.getHostRunResult().getResults().get(hostRunPiecesSize - 1).getTime();
+                int predictionTime = lastHostTime + forecast;
+                //sprawdzamy czy nie przegralismy juz w tym momencie
+                //czy ostatni element biegu (bieg z obcym wiec bieg kompletny) nie jest wczesniej niz nasz ostatni element.
+                if(memcacheRunInfo.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1).getTime() <= lastHostTime)
+                    return memcacheRunInfo.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1);
+                int i;
+                for(i = 0; i<opponentRunPiecesSize; ++i) {
+                    if(memcacheRunInfo.getOpponentRunResult().getResults().get(i).getTime() > predictionTime)
                         break;
+                }
+                if(i < 2)
+                    return new RunResultPiece(0,0);
+                //jesli petla nie zakonczyla sie na breaku (czyli przy naszej predykcji przeciwnik juz osiiagnal mete)
+                if(i == opponentRunPiecesSize) {
+                    predictionTime = lastHostTime;
+                    //dekrementujemy, zeby nie wyjsc poza zakres
+                    i--;
+                }
+                //pomiedzy tymi kawalkami rozpatrujemy
+                RunResultPiece piece1 = memcacheRunInfo.getOpponentRunResult().getResults().get(i-1);
+                RunResultPiece piece2 = memcacheRunInfo.getOpponentRunResult().getResults().get(i);
+                float t1, t2, t, d1, d2, x;
+                t1 = (float) piece1.getTime();
+                t2 = (float) piece2.getTime();
+                t = (float) predictionTime;
+                d1 = (float) piece1.getDistance();
+                d2 = (float) piece2.getDistance();
+                x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
+                return new RunResultPiece((int) x, (int) t);
+            } else {
             }
-            i--;
-            if(i < 6) {
-                if(memcacheRunInfo.getOpponentRunResult().getResults().size() > 10)
-                    return memcacheRunInfo.getOpponentRunResult().getResults().get(i);
-                return memcacheRunInfo.getHostRunResult().getResults().get(hostRunPiecesSize - 1);
-            }
-
-            int distance1, distance2, time1, time2;
-            distance1 = memcacheRunInfo.getOpponentRunResult().getResults().get(i).getDistance() - memcacheRunInfo.getOpponentRunResult().getResults().get(i-5).getDistance();
-            time1 = memcacheRunInfo.getOpponentRunResult().getResults().get(i).getTime() - memcacheRunInfo.getOpponentRunResult().getResults().get(i-5).getTime();
-            time2 = lastHostTime+forecast - memcacheRunInfo.getOpponentRunResult().getResults().get(i).getTime();
-            if(time1 != 0)
-                distance2 = distance1*time2/time1;
-            else
-                distance2 = memcacheRunInfo.getOpponentRunResult().getResults().get(i).getDistance();
-            return new RunResultPiece(distance2, lastHostTime+forecast);
-            //TODO JAKIES PRZEJEBANE PROGNOZY!!!!
         } else {
-
         }
 
         return new RunResultPiece();
