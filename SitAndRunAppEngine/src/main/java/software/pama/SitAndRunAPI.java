@@ -379,7 +379,11 @@ public class SitAndRunAPI {
 
             RunResultPiece lastHostResult = hostRunResult.getResults().get(hostRunResult.getResults().size()-1);
             RunResultPiece lastOpponentResult = memcacheRunInfo.getOpponentRunResult().getResults().get(memcacheRunInfo.getOpponentRunResult().getResults().size()-1);
-            if(lastHostResult.getTime() > lastOpponentResult.getTime()) {
+
+            int winner = checkIfTheWinnerExist(hostRunResult, memcacheRunInfo.getOpponentRunResult(), memcacheRunInfo.getDistance(), true);
+
+            //if(lastHostResult.getTime() > lastOpponentResult.getTime()) {
+            if(winner == 2) {
                 //przegrana
                 Key key = Key.create(DatastoreProfile.class, user.getEmail());
                 DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
@@ -413,7 +417,8 @@ public class SitAndRunAPI {
                 return new RunResultPiece(-1, 0);
             }
 
-            if(lastHostResult.getDistance() > lastOpponentResult.getDistance()) {
+            //if(lastHostResult.getDistance() > lastOpponentResult.getDistance()) {
+            if(winner == 1){
                 //wygrana
                 Key key = Key.create(DatastoreProfile.class, user.getEmail());
                 DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
@@ -660,5 +665,46 @@ public class SitAndRunAPI {
         runResult.addResult(lastPiece);
         opponentHistory.setRunResult(runResult);
         return opponentHistory;
+    }
+
+    private int checkIfTheWinnerExist(RunResult host, RunResult opponent, int totalDistance, boolean runWithRand){
+        //zwraca 0 gdy brak zwyciescy, 1 jesli host, 2 jesli opponent
+        if(runWithRand){
+            //sprawdzamy czy przekroczylismy dystans wyscigu
+            if(host.getResults().get(host.getResults().size()-1).getDistance() > totalDistance) {
+                //sprawdzamy czy pierwsza probka u hosta ktora przekroczyla dystans miala lepszy czas
+                //tak: host zwyciesca
+                //nie: sprawdzamy czy ze stosunku pierwszej ktora przekroczyla wraz z ostatnia ktora tego nie dokonala jak wyliczymy czas dla osiagniecia zadanego dystansu to czy osiagnal zwyciestwo
+                int i;
+                for(i = 0; i < host.getResults().size(); ++i) {
+                    if(host.getResults().get(i).getDistance() > totalDistance)
+                        break;
+                }
+                if(host.getResults().get(i).getTime() < opponent.getResults().get(host.getResults().size()-1).getTime())
+                    return 1;
+
+                RunResultPiece piece1 = host.getResults().get(i-1);
+                RunResultPiece piece2 = host.getResults().get(i);
+                float t1, t2, t, d1, d2, x;
+                t1 = (float) piece1.getTime();
+                t2 = (float) piece2.getTime();
+                x = (float) totalDistance;
+                d1 = (float) piece1.getDistance();
+                d2 = (float) piece2.getDistance();
+                t = ((x-d1)*(t2-t1))/(d2-d1) + t1;
+
+                if(t < opponent.getResults().get(host.getResults().size()-1).getTime())
+                    return 1;
+                return 2;
+            } else {
+                //jesli nie przekroczylismy dystansu sprawdzamy czy nie przgralismy
+                if(host.getResults().get(host.getResults().size()-1).getTime() > opponent.getResults().get(host.getResults().size()-1).getTime())
+                    return 2;
+                return 0;
+            }
+        }else {
+
+        }
+        return 0;
     }
 }
