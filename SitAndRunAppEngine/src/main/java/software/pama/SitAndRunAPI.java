@@ -14,10 +14,7 @@ import com.google.appengine.api.users.User;
 import com.googlecode.objectify.Key;
 import com.googlecode.objectify.cmd.Query;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 /**
  * Created by Pawel on 2015-01-17.
@@ -97,6 +94,7 @@ public class SitAndRunAPI {
                     Zapisujemy w bazie.
                     Wrzucamy profil do Memcache.
          */
+        login = login.toLowerCase();
         if(!isLoginCorrect(login))
             throw new BadRequestException("Bad parameter format");
         Query<DatastoreProfile> query = ofy().load().type(DatastoreProfile.class).order("login");
@@ -120,8 +118,8 @@ public class SitAndRunAPI {
     @ApiMethod(name = "deleteAccount", path = "deleteAccount")
     public WrappedBoolean deleteAccount(User user) throws OAuthRequestException{
         cancelCurrentRun(user);
-        //TODO transakcja usuniecia calej historii danego uzytkownika wraz z uzytkownikiem
         Key key = Key.create(DatastoreProfile.class, user.getEmail());
+        ofy().delete().keys(ofy().load().ancestor(key).keys().list());
         ofy().delete().key(key).now();
         syncCache.delete(user.getEmail());
         return new WrappedBoolean(false);
@@ -208,15 +206,19 @@ public class SitAndRunAPI {
         return new WrappedInteger(0);
     }
 
-   /**
+    /**
      * Funkcja wykorzystywana do anulowania udzialu w biegu
      * @return 0 jesli anulowanie przebieglo pomyslnie, <0 jesli nie bylo czego anulowac lub blad
      */
     @ApiMethod(name = "cancelRun", path = "cancelRun")
     public WrappedInteger cancelRun(User user) throws OAuthRequestException{
-        if(cancelCurrentRun(user).getResult() == 0)
-            //TODO zmiana statystyk
+        if(cancelCurrentRun(user).getResult() == 0) {
+            DatastoreProfile datastoreProfile = getDatastoreProfile(user);
+            datastoreProfile.addLoseRace();
+            ofy().save().entity(datastoreProfile);
+            syncCache.put(user.getEmail(), new Profile(datastoreProfile));
             return new WrappedInteger(0);
+        }
         return new WrappedInteger(-1);
     }
 
@@ -228,7 +230,7 @@ public class SitAndRunAPI {
      * @return dystans przeciwnika jaki mial po odpowiadajacym czasie
      */
     @ApiMethod(name = "currentRunState", path = "currentRunState")
-    public RunResultPiece currentRunState(User user, RunResult runResult, @Named("forecast") int forecast) throws OAuthRequestException{
+    public RunResultPiece currentRunState(User user, RunResult runResult, @Named("forecast") int forecast) throws OAuthRequestException, BadRequestException{
         /*
         Opis dzialania:
         Sprawdzenie poprawnosci danych.
@@ -266,7 +268,8 @@ public class SitAndRunAPI {
         Na podstawie rezultatow przeciwnika i informacji o czasie przewidywania obliczamy pozycje przeciwnika.
         Zwracamy pozycje przeciwnika.
          */
-        //TODO sprawdzenie poprawnosci danych
+        if(forecast < 0 || forecast > 30 || !isRunResultCorrect(runResult))
+            throw new BadRequestException("Bad parameter format");
 
         Profile p = signIn(user);
         if(p == null)
@@ -287,8 +290,15 @@ public class SitAndRunAPI {
             RunResult hostRunResult = currentRunInformation.getHostRunResult();
             if(hostRunResult == null)
                 hostRunResult = new RunResult(runResult.getResults());
-            else
+            else {
+                RunResultPiece hostLastRunResultPiece = hostRunResult.getResults().get(hostRunResult.getResults().size()-1);
+                RunResultPiece parameterFirstRunResultPiece = runResult.getResults().get(runResult.getResults().size()-1);
+                if(hostLastRunResultPiece.getTime() >= parameterFirstRunResultPiece.getTime())
+                    throw new BadRequestException("Run results are redundant");
+                if(hostLastRunResultPiece.getDistance() > parameterFirstRunResultPiece.getDistance())
+                    throw new BadRequestException("Run results are wrong");
                 hostRunResult.addResults(runResult.getResults());
+            }
             currentRunInformation.setHostRunResult(hostRunResult);
 
             int winner = checkWhoIsTheWinner(hostRunResult, currentRunInformation.getOpponentRunResult(), currentRunInformation.getDistance(), true);
@@ -434,8 +444,10 @@ public class SitAndRunAPI {
     }
 
     private boolean isPreferencesCorrect(Preferences preferences) {
-        //TODO
-        return true;
+        int difference = preferences.getAspiration() - preferences.getReservation();
+        if(difference < 0)
+            difference = -difference;
+        return (preferences.getReservation() > 500 && preferences.getAspiration() > 500 && difference > 100);
     }
 
     private boolean isLoginCorrect(String login) {
@@ -447,12 +459,22 @@ public class SitAndRunAPI {
         Nie:
             Zwracamy false
          */
-        //TODO
-        return true;
+        return login.matches("[a-z0-9]+");
     }
 
-    private boolean isGcmIDCorrect(String gcmID) {
-        //TODO
+    private boolean isRunResultCorrect(RunResult runResult) {
+        RunResultPiece lastPiece = null;
+        Iterator<RunResultPiece> iterator = runResult.getResults().iterator();
+        while(iterator.hasNext()) {
+            if(lastPiece == null) {
+                lastPiece = iterator.next();
+                continue;
+            }
+            RunResultPiece currentPiece = iterator.next();
+            if(lastPiece.getTime() >= currentPiece.getTime() || lastPiece.getDistance() > currentPiece.getDistance())
+                return false;
+            lastPiece = currentPiece;
+        }
         return true;
     }
 
