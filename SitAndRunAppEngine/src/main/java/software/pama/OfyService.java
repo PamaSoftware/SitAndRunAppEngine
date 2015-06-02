@@ -12,7 +12,7 @@ public class OfyService {
         factory().register(DatastoreProfile.class);
         factory().register(DatastoreProfileHistory.class);
         factory().register(DatastoreTotalHistory.class);
-        factory().register(MemcacheRunInfo.class);
+        factory().register(CurrentRunInformation.class);
     }
 
     public static Objectify ofy() {

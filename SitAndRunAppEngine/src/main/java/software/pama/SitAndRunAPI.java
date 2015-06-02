@@ -56,8 +56,7 @@ public class SitAndRunAPI {
         Profile profile = (Profile) syncCache.get(user.getEmail());
         if(profile != null)
             return profile;
-        Key key = Key.create(DatastoreProfile.class, user.getEmail());
-        DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
+        DatastoreProfile datastoreProfile = getDatastoreProfile(user);
         if(datastoreProfile == null)
             return null;
         Profile p = new Profile(datastoreProfile);
@@ -120,7 +119,7 @@ public class SitAndRunAPI {
      */
     @ApiMethod(name = "deleteAccount", path = "deleteAccount")
     public WrappedBoolean deleteAccount(User user) throws OAuthRequestException{
-        cancelRun(user);
+        cancelCurrentRun(user);
         //TODO transakcja usuniecia calej historii danego uzytkownika wraz z uzytkownikiem
         Key key = Key.create(DatastoreProfile.class, user.getEmail());
         ofy().delete().key(key).now();
@@ -161,23 +160,14 @@ public class SitAndRunAPI {
         if(!isPreferencesCorrect(preferences))
             throw new BadRequestException("Bad parameter format");
 
-        Key key = Key.create(DatastoreProfile.class, user.getEmail());
-        DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
+        DatastoreProfile datastoreProfile = getDatastoreProfile(user);
         if(datastoreProfile == null)
             return null;
 
-        Query<MemcacheRunInfo> query = ofy().load().type(MemcacheRunInfo.class).order("ownerLogin");
-        query = query.filter("ownerLogin =",datastoreProfile.getLogin());
-        if(query.first().now() != null){
-            cancelRun(user);
-        }
+        if(checkIfRunExistAsNotFinished(datastoreProfile.getLogin()))
+            cancelCurrentRun(user);
 
-        MemcacheRunInfo runInfo = findRandomOpponent(datastoreProfile, preferences);
-        if(runInfo == null)
-            return new WrappedInteger(-1);
-
-        //zapisujemy runInfo do bazy oraz do memcache
-        //zwracamy date startu
+        CurrentRunInformation runInfo = findRandomOpponent(datastoreProfile, preferences);
 
         runInfo.setLastDatastoreSavedTime(new Date());
         runInfo.setDuringRace(true);
@@ -188,7 +178,6 @@ public class SitAndRunAPI {
         Random generator = new Random();
         int i = generator.nextInt(30) + 30;
         return new WrappedInteger(i);
-
     }
 
     /**
@@ -219,87 +208,16 @@ public class SitAndRunAPI {
         return new WrappedInteger(0);
     }
 
-    /**
+   /**
      * Funkcja wykorzystywana do anulowania udzialu w biegu
-     * @return true jesli anulowanie przebieglo pomyslnie
+     * @return 0 jesli anulowanie przebieglo pomyslnie, <0 jesli nie bylo czego anulowac lub blad
      */
     @ApiMethod(name = "cancelRun", path = "cancelRun")
-    public WrappedBoolean cancelRun(User user) throws OAuthRequestException{
-        //w przypadku wywolania canel w pierwszej kolejnosci sprawdzamy czy mamy profil odpowiadajacy mailowi
-        //jesli tak to dalej jesli nie to blad
-
-        //sprawdzamy czy nasz login bierze udzial w matchowaniu czy moze juz biegnie, kazdy przypadek musimy rozpatrzec pod kontem takze jak powinna zareagowac druga strona
-        //jest w trakcie matchowania
-        //jako host
-            //usuwa wpis z memcache - gosc nawet jezeli wprowadzil sobie cos w trakcie to po odliczeniu na pierwszej probie przekazania wyniku biegu czyli zaraz po odliczeniu napotka na blad odniesienia, gdy wpisu docelowego nie bedzie ani w bazie ani w memcache, wiec oznaczac to bedzie rozlaczenie hosta
-        //jako gosc
-            //nie wiem czy da sie anulowac w trakcie matchowania, jesli matchowanie sie odbywa to nie mozliwym jest wywolac od razu funkcje anulowania
-            //anulowanie po wykryciu biegu sprowadza sie jedynie do usuniecia lub modyfikacji informacji o naszym odejsciu w memcache
-
-        //jesli cancel bedzie wykryty w momencie gdy nbiby juz jest bieg ale nie splynely zadne wyniki (czyli w trakcie odliczania)
-        //wtedy ustawiamy flage o rezygnacji, wtedy druga strona zajmuje sie usunieciem wszystkiego
-
-        //jesli biegnie
-        //czy z kims
-            //czy jest hostem
-                //ustawiamy w memcahce i w bazie flage o rezygnacji, wtedy druga strona zajmuje sie zakonczeniem wyscigu
-            //jest gosciem
-                //ustawiamy w memcache i w bazie flage o rezygnacji, wtedy druga strona zajmuje sie zakonczeniem wyscigu
-
-        //biegnie z randomem
-            //nic sie nie dzieje, chyba ze jestesmy w trakcie biegu wtedy dochodzi nam bieg do statystyk ale nie wygrana
-
-        /*
-        Opis dzialania:
-        Anulowanie wyscigu randomowego:
-        Wyciagniecie z bazy loginu uzytkownika.
-        Sprawdzenie czy wystepuje wpis w memcache (w sposob delikatny, gdyz moze to byc bieg z kims).
-        Tak:
-            Przeanalizowanie wpisu czy jest to bieg z randomowa osoba.
-            Tak:
-                Usuniecie wpisu.
-                Zaznaczenie flagi ze jest to bieg z randomem (przyda sie przy wyciaganiu danych z bazy w sposob niekonieczne ostrozny watkowo)
-            Nie:
-                //TODO
-        Wyciagamy wpis z bazy. (metoda zalezna od flagi czy biegniemy z randomem)
-        Przeanalizowanie wpisu czy jest to bieg z randomowa osoba. (moglo nie dojsc do analizy wczesniej, gdyz memcache mogl zostac wymieciony)
-            Tak:
-                Usuniecie wpisu.
-                Wyciagamy z bazy nasz profil.
-                Zwiekszamy o 1 ilosc wyscigow w jakich wzielismy udzial.
-                Zapisujemy do bazy.
-                Uaktualniamy memcache.
-                zwracamy true
-            Nie:
-                //TODO
-         */
-
-        //KWESTIA BEZPIECZENSTWA WATKOWEGO
-        Profile p = signIn(user);
-        if(p == null)
-            return new WrappedBoolean(false);
-        Query<MemcacheRunInfo> query = ofy().load().type(MemcacheRunInfo.class).order("ownerLogin");
-        query = query.filter("ownerLogin =",p.getLogin());
-        MemcacheRunInfo memcacheRunInfo = query.first().now();
-        if(memcacheRunInfo == null){
-            syncCache.delete(p.getLogin());
-            return new WrappedBoolean(true);
-        }
-        //jesli jednak jest to sprawdzamy czy bieg z randomem oraz czy juz sie rozpoczal
-        if(memcacheRunInfo.isRunWithRandom) {
-            //jesli z randomem to wiadomo ze jestesmy tez hostem
-            ofy().delete().entity(memcacheRunInfo).now();
-            syncCache.delete(p.getLogin());
-            //TODO jesli w trakcie biegu to zmieniaja nam sie statystyki
-            return new WrappedBoolean(true);
-        } else {
-            if(memcacheRunInfo.getHostLogin() == p.getLogin()) {
-
-            } else {
-
-            }
-        }
-        return new WrappedBoolean(false);
+    public WrappedInteger cancelRun(User user) throws OAuthRequestException{
+        if(cancelCurrentRun(user).getResult() == 0)
+            //TODO zmiana statystyk
+            return new WrappedInteger(0);
+        return new WrappedInteger(-1);
     }
 
     /**
@@ -311,7 +229,6 @@ public class SitAndRunAPI {
      */
     @ApiMethod(name = "currentRunState", path = "currentRunState")
     public RunResultPiece currentRunState(User user, RunResult runResult, @Named("forecast") int forecast) throws OAuthRequestException{
-        //TODO wpisywanie danych do memcache, oraz wyliczenie w jakim miejscu przeciwnik byl w danym czasie, najlepiej z zasymulowaniem paru sekund do przodu i zwroceniu czasu
         /*
         Opis dzialania:
         Sprawdzenie poprawnosci danych.
@@ -349,116 +266,98 @@ public class SitAndRunAPI {
         Na podstawie rezultatow przeciwnika i informacji o czasie przewidywania obliczamy pozycje przeciwnika.
         Zwracamy pozycje przeciwnika.
          */
-
         //TODO sprawdzenie poprawnosci danych
 
         Profile p = signIn(user);
         if(p == null)
             return null;
 
-        MemcacheRunInfo memcacheRunInfo = (MemcacheRunInfo) syncCache.get(p.getLogin());
-        if(memcacheRunInfo == null) {
-            Query<MemcacheRunInfo> query = ofy().load().type(MemcacheRunInfo.class).order("ownerLogin");
-            query = query.filter("ownerLogin =",p.getLogin());
-            memcacheRunInfo = query.first().now();
-            if(memcacheRunInfo == null)
+        CurrentRunInformation currentRunInformation = (CurrentRunInformation) syncCache.get(p.getLogin());
+        if(currentRunInformation == null) {
+            currentRunInformation = getNotFinishedRun(p.getLogin());
+            if(currentRunInformation == null)
                 return null;
         }
 
-        if(memcacheRunInfo.isRunWithRandom){
+        if(currentRunInformation.isRunWithRandom){
             //uaktualnienie wpisu
             //sprawdzenie wygranej/przegranej
             //zapis do memcache oraz jesli dawno to do bazy
             //przewidzenie pozycji przeciwnika
-            RunResult hostRunResult = memcacheRunInfo.getHostRunResult();
+            RunResult hostRunResult = currentRunInformation.getHostRunResult();
             if(hostRunResult == null)
                 hostRunResult = new RunResult(runResult.getResults());
             else
                 hostRunResult.addResults(runResult.getResults());
-            memcacheRunInfo.setHostRunResult(hostRunResult);
+            currentRunInformation.setHostRunResult(hostRunResult);
 
-            RunResultPiece lastHostResult = hostRunResult.getResults().get(hostRunResult.getResults().size()-1);
-            RunResultPiece lastOpponentResult = memcacheRunInfo.getOpponentRunResult().getResults().get(memcacheRunInfo.getOpponentRunResult().getResults().size()-1);
+            int winner = checkWhoIsTheWinner(hostRunResult, currentRunInformation.getOpponentRunResult(), currentRunInformation.getDistance(), true);
 
-            int winner = checkIfTheWinnerExist(hostRunResult, memcacheRunInfo.getOpponentRunResult(), memcacheRunInfo.getDistance(), true);
-
-            //if(lastHostResult.getTime() > lastOpponentResult.getTime()) {
             if(winner == 2) {
                 //przegrana
-                Key key = Key.create(DatastoreProfile.class, user.getEmail());
-                DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
+                DatastoreProfile datastoreProfile = getDatastoreProfile(user);
                 if(datastoreProfile == null)
                     return null;
-
                 //dodajemy statystyki
                 datastoreProfile.addLoseRace();
-
-                float avgSpeed =  (float)lastHostResult.getDistance()/(float)lastHostResult.getTime()*(float)3600/(float)1000;
                 //dodajemy historie uzytkownika
                 DatastoreProfileHistory profileHistory = new DatastoreProfileHistory();
-                profileHistory.setParent(key);
+                profileHistory.setParent(Key.create(DatastoreProfile.class, user.getEmail()));
+                RunResultPiece lastHostResult = hostRunResult.getResults().get(hostRunResult.getResults().size()-1);
+                float avgSpeed = countAvgSpeed((float)lastHostResult.getDistance(), (float)lastHostResult.getTime());
                 profileHistory.setAverageSpeed(avgSpeed);
                 profileHistory.setTotalDistance(lastHostResult.getDistance());
                 profileHistory.setDateOfRun(new Date());
                 profileHistory.setIsWinner(false);
-                profileHistory.setRunResult(memcacheRunInfo.getHostRunResult());
-
+                profileHistory.setRunResult(currentRunInformation.getHostRunResult());
                 //dodajemy historie ogolna
                 DatastoreTotalHistory totalHistory = new DatastoreTotalHistory();
                 totalHistory.setAverageSpeed(avgSpeed);
                 totalHistory.setTotalDistance(lastHostResult.getDistance());
-                totalHistory.setRunResult(memcacheRunInfo.getHostRunResult());
-
+                totalHistory.setRunResult(currentRunInformation.getHostRunResult());
                 //zapisujemy do bazy
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
 
-                cancelRun(user);
-
+                cancelCurrentRun(user);
                 return new RunResultPiece(-1, 0);
             }
 
-            //if(lastHostResult.getDistance() > lastOpponentResult.getDistance()) {
-            if(winner == 1){
+            if (winner == 1) {
                 //wygrana
-                Key key = Key.create(DatastoreProfile.class, user.getEmail());
-                DatastoreProfile datastoreProfile = (DatastoreProfile) ofy().load().key(key).now();
-                if(datastoreProfile == null)
+                DatastoreProfile datastoreProfile = getDatastoreProfile(user);
+                if (datastoreProfile == null)
                     return null;
-
                 //dodajemy statystyki
                 datastoreProfile.addWinRace();
-
-                float avgSpeed = (float)lastHostResult.getDistance()/(float)lastHostResult.getTime()*(float)3600/(float)1000;
                 //dodajemy historie uzytkownika
                 DatastoreProfileHistory profileHistory = new DatastoreProfileHistory();
-                profileHistory.setParent(key);
+                profileHistory.setParent(Key.create(DatastoreProfile.class, user.getEmail()));
+                RunResultPiece lastHostResult = hostRunResult.getResults().get(hostRunResult.getResults().size()-1);
+                float avgSpeed = countAvgSpeed((float)lastHostResult.getDistance(), (float)lastHostResult.getTime());
                 profileHistory.setAverageSpeed(avgSpeed);
                 profileHistory.setTotalDistance(lastHostResult.getDistance());
                 profileHistory.setDateOfRun(new Date());
-                profileHistory.setIsWinner(false);
-                profileHistory.setRunResult(memcacheRunInfo.getHostRunResult());
-
+                profileHistory.setIsWinner(true);
+                profileHistory.setRunResult(currentRunInformation.getHostRunResult());
                 //dodajemy historie ogolna
                 DatastoreTotalHistory totalHistory = new DatastoreTotalHistory();
                 totalHistory.setAverageSpeed(avgSpeed);
                 totalHistory.setTotalDistance(lastHostResult.getDistance());
-                totalHistory.setRunResult(memcacheRunInfo.getHostRunResult());
-
+                totalHistory.setRunResult(currentRunInformation.getHostRunResult());
                 //zapisujemy do bazy
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
 
-                cancelRun(user);
-
+                cancelCurrentRun(user);
                 return new RunResultPiece(-1, 1);
             }
 
-            syncCache.put(p.getLogin(), memcacheRunInfo);
-            if(new Date().getTime() - memcacheRunInfo.getLastDatastoreSavedTime().getTime() > 1000*30) {
-                memcacheRunInfo.setLastDatastoreSavedTime(new Date());
-                ofy().save().entity(memcacheRunInfo).now();
+            syncCache.put(p.getLogin(), currentRunInformation);
+            if(new Date().getTime() - currentRunInformation.getLastDatastoreSavedTime().getTime() > 1000*30) {
+                currentRunInformation.setLastDatastoreSavedTime(new Date());
+                ofy().save().entity(currentRunInformation).now();
             }
 
-            return makePrediction(memcacheRunInfo, true, forecast);
+            return makePrediction(currentRunInformation, true, forecast);
         } else {
             //TODO bezpiecznie watkowo
             //sprawdzenie czy host
@@ -466,7 +365,23 @@ public class SitAndRunAPI {
         return new RunResultPiece(1, 0);
     }
 
-    private MemcacheRunInfo findRandomOpponent(DatastoreProfile datastoreProfile,Preferences preferences) {
+    /**
+     * Wyciaganie z bazy profilu uzytkownika
+     *
+     * @return profil uzytkownika, null jesli uzytkownik nie istnieje
+     */
+    public DatastoreProfile getDatastoreProfile(User user) throws OAuthRequestException{
+        /*
+        Opis dzialania:
+            Wyciagamy profil z bazy na podstawie adresu email.
+            Jesli profil nie istnieje w bazie, proba wyciagniecia zwraca null.
+            Zwracamy wynik proby wyciagniecia profilu z bazy.
+         */
+        Key key = Key.create(DatastoreProfile.class, user.getEmail());
+        return (DatastoreProfile) ofy().load().key(key).now();
+    }
+
+    private CurrentRunInformation findRandomOpponent(DatastoreProfile datastoreProfile,Preferences preferences) {
         /*
         Na podstawie historii biegow uzytkownika uzyskanej za pomoca klucza oraz przy uwzglednieniu preferencji dystansu, dopieramy najbardziej odpowiadajacy bieg historyczny.
         Ustalamy dystans. Wypelniamy wstepnie informacje dotyczace biegu i zwracamy tak wypelniony obiekt.
@@ -481,12 +396,12 @@ public class SitAndRunAPI {
         Znalezlismy:
         Nie znalezlismy:
          */
-        MemcacheRunInfo memcacheRunInfo = new MemcacheRunInfo();
-        memcacheRunInfo.setRunWithRandom(true);
+        CurrentRunInformation currentRunInformation = new CurrentRunInformation();
+        currentRunInformation.setRunWithRandom(true);
 
-        memcacheRunInfo.setOwnerLogin(datastoreProfile.getLogin());
-        memcacheRunInfo.setHostLogin(datastoreProfile.getLogin());
-        memcacheRunInfo.setHostPreferences(preferences);
+        currentRunInformation.setOwnerLogin(datastoreProfile.getLogin());
+        currentRunInformation.setHostLogin(datastoreProfile.getLogin());
+        currentRunInformation.setHostPreferences(preferences);
 
         //szukamy czy w ogole sa jakies wpisy w bazie na danym zakresie dystansow.
         int lowLimit, highLimit;
@@ -513,9 +428,9 @@ public class SitAndRunAPI {
             opponentHistory = datastoreTotalHistoryList.get(i);
         }
 
-        memcacheRunInfo.setDistance(opponentHistory.getTotalDistance());
-        memcacheRunInfo.setOpponentRunResult(opponentHistory.getRunResult());
-        return memcacheRunInfo;
+        currentRunInformation.setDistance(opponentHistory.getTotalDistance());
+        currentRunInformation.setOpponentRunResult(opponentHistory.getRunResult());
+        return currentRunInformation;
     }
 
     private boolean isPreferencesCorrect(Preferences preferences) {
@@ -541,7 +456,8 @@ public class SitAndRunAPI {
         return true;
     }
 
-    private RunResultPiece makePrediction(MemcacheRunInfo memcacheRunInfo, boolean predictionForHost, int forecast) {
+    private RunResultPiece makePrediction(CurrentRunInformation currentRunInformation, boolean predictionForHost, int forecast) {
+        //TODO rozwinac opis, zeby zawieral cala metodologie
         /*
         Pobieramy rozmiar zebranych wynikow dla hosta i przeciwnika.
         Rozpatrujemy przewidywanie dla hosta (czyli analizujemy bieg jego przeciwnika)
@@ -561,20 +477,20 @@ public class SitAndRunAPI {
             Bieg ze znajomym:
         Rozpatrujemy przewidywanie dla niehosta (czyli analizujemy bieg hosta)
          */
-        int hostRunPiecesSize = memcacheRunInfo.getHostRunResult().getResults().size();
-        int opponentRunPiecesSize = memcacheRunInfo.getOpponentRunResult().getResults().size();
+        int hostRunPiecesSize = currentRunInformation.getHostRunResult().getResults().size();
+        int opponentRunPiecesSize = currentRunInformation.getOpponentRunResult().getResults().size();
 
         if(predictionForHost) {
-            if(memcacheRunInfo.isRunWithRandom) {
-                int lastHostTime = memcacheRunInfo.getHostRunResult().getResults().get(hostRunPiecesSize - 1).getTime();
+            if(currentRunInformation.isRunWithRandom) {
+                int lastHostTime = currentRunInformation.getHostRunResult().getResults().get(hostRunPiecesSize - 1).getTime();
                 int predictionTime = lastHostTime + forecast;
                 //sprawdzamy czy nie przegralismy juz w tym momencie
                 //czy ostatni element biegu (bieg z obcym wiec bieg kompletny) nie jest wczesniej niz nasz ostatni element.
-                if(memcacheRunInfo.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1).getTime() <= lastHostTime)
-                    return memcacheRunInfo.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1);
+                if(currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1).getTime() <= lastHostTime)
+                    return currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1);
                 int i;
                 for(i = 0; i<opponentRunPiecesSize; ++i) {
-                    if(memcacheRunInfo.getOpponentRunResult().getResults().get(i).getTime() > predictionTime)
+                    if(currentRunInformation.getOpponentRunResult().getResults().get(i).getTime() > predictionTime)
                         break;
                 }
                 if(i < 2)
@@ -586,8 +502,8 @@ public class SitAndRunAPI {
                     i--;
                 }
                 //pomiedzy tymi kawalkami rozpatrujemy
-                RunResultPiece piece1 = memcacheRunInfo.getOpponentRunResult().getResults().get(i-1);
-                RunResultPiece piece2 = memcacheRunInfo.getOpponentRunResult().getResults().get(i);
+                RunResultPiece piece1 = currentRunInformation.getOpponentRunResult().getResults().get(i-1);
+                RunResultPiece piece2 = currentRunInformation.getOpponentRunResult().getResults().get(i);
                 float t1, t2, t, d1, d2, x;
                 t1 = (float) piece1.getTime();
                 t2 = (float) piece2.getTime();
@@ -605,6 +521,7 @@ public class SitAndRunAPI {
     }
 
     private DatastoreTotalHistory runGenerator(Preferences preferences, float avgSpeed) {
+        //TODO opis szczegolowy
         /*
         Dobieramy dystans tak by byl losowy pomiedzy aspiracja a srodkiem miedzy aspiracja a rezerwacja
          */
@@ -667,7 +584,8 @@ public class SitAndRunAPI {
         return opponentHistory;
     }
 
-    private int checkIfTheWinnerExist(RunResult host, RunResult opponent, int totalDistance, boolean runWithRand){
+    private int checkWhoIsTheWinner(RunResult host, RunResult opponent, int totalDistance, boolean runWithRand){
+        //TODO opis
         //zwraca 0 gdy brak zwyciescy, 1 jesli host, 2 jesli opponent
         if(runWithRand){
             //sprawdzamy czy przekroczylismy dystans wyscigu
@@ -706,5 +624,99 @@ public class SitAndRunAPI {
 
         }
         return 0;
+    }
+
+    private boolean checkIfRunExistAsNotFinished(String login) {
+        return getNotFinishedRun(login) != null;
+    }
+
+    private CurrentRunInformation getNotFinishedRun(String login) {
+        Query<CurrentRunInformation> query = ofy().load().type(CurrentRunInformation.class).order("ownerLogin");
+        query = query.filter("ownerLogin =",login);
+        return query.first().now();
+    }
+
+    /**
+     * Function to count average speed.
+     * @param distance meters
+     * @param time seconds
+     * @return kilometers per hour
+     */
+    private float countAvgSpeed(float distance, float time) {
+        return distance/time*(float)3600/(float)1000;
+    }
+
+    private WrappedInteger cancelCurrentRun(User user) throws OAuthRequestException{
+        //w przypadku wywolania canel w pierwszej kolejnosci sprawdzamy czy mamy profil odpowiadajacy mailowi
+        //jesli tak to dalej jesli nie to blad
+
+        //sprawdzamy czy nasz login bierze udzial w matchowaniu czy moze juz biegnie, kazdy przypadek musimy rozpatrzec pod kontem takze jak powinna zareagowac druga strona
+        //jest w trakcie matchowania
+        //jako host
+        //usuwa wpis z memcache - gosc nawet jezeli wprowadzil sobie cos w trakcie to po odliczeniu na pierwszej probie przekazania wyniku biegu czyli zaraz po odliczeniu napotka na blad odniesienia, gdy wpisu docelowego nie bedzie ani w bazie ani w memcache, wiec oznaczac to bedzie rozlaczenie hosta
+        //jako gosc
+        //nie wiem czy da sie anulowac w trakcie matchowania, jesli matchowanie sie odbywa to nie mozliwym jest wywolac od razu funkcje anulowania
+        //anulowanie po wykryciu biegu sprowadza sie jedynie do usuniecia lub modyfikacji informacji o naszym odejsciu w memcache
+
+        //jesli cancel bedzie wykryty w momencie gdy nbiby juz jest bieg ale nie splynely zadne wyniki (czyli w trakcie odliczania)
+        //wtedy ustawiamy flage o rezygnacji, wtedy druga strona zajmuje sie usunieciem wszystkiego
+
+        //jesli biegnie
+        //czy z kims
+        //czy jest hostem
+        //ustawiamy w memcahce i w bazie flage o rezygnacji, wtedy druga strona zajmuje sie zakonczeniem wyscigu
+        //jest gosciem
+        //ustawiamy w memcache i w bazie flage o rezygnacji, wtedy druga strona zajmuje sie zakonczeniem wyscigu
+
+        //biegnie z randomem
+        //nic sie nie dzieje, chyba ze jestesmy w trakcie biegu wtedy dochodzi nam bieg do statystyk ale nie wygrana
+
+        /*
+        Opis dzialania:
+        Anulowanie wyscigu randomowego:
+        Wyciagniecie z bazy loginu uzytkownika.
+        Sprawdzenie czy wystepuje wpis w memcache (w sposob delikatny, gdyz moze to byc bieg z kims).
+        Tak:
+            Przeanalizowanie wpisu czy jest to bieg z randomowa osoba.
+            Tak:
+                Usuniecie wpisu.
+                Zaznaczenie flagi ze jest to bieg z randomem (przyda sie przy wyciaganiu danych z bazy w sposob niekonieczne ostrozny watkowo)
+            Nie:
+                //TODO
+        Wyciagamy wpis z bazy. (metoda zalezna od flagi czy biegniemy z randomem)
+        Przeanalizowanie wpisu czy jest to bieg z randomowa osoba. (moglo nie dojsc do analizy wczesniej, gdyz memcache mogl zostac wymieciony)
+            Tak:
+                Usuniecie wpisu.
+                Wyciagamy z bazy nasz profil.
+                Zwiekszamy o 1 ilosc wyscigow w jakich wzielismy udzial.
+                Zapisujemy do bazy.
+                Uaktualniamy memcache.
+                zwracamy true
+            Nie:
+                //TODO
+         */
+        Profile p = signIn(user);
+        if(p == null)
+            return new WrappedInteger(-1);
+
+        CurrentRunInformation currentRunInformation = getNotFinishedRun(p.getLogin());
+        if(currentRunInformation == null) {
+            //dla pewnosci usuwamy wpis z cache (nigdy i tak nie powinno go byc)
+            syncCache.delete(p.getLogin());
+            return new WrappedInteger(-2);
+        }
+
+        if(currentRunInformation.isRunWithRandom) {
+            ofy().delete().entity(currentRunInformation).now();
+            syncCache.delete(p.getLogin());
+            return new WrappedInteger(0);
+        } else {
+            if(currentRunInformation.getHostLogin() == p.getLogin()) {
+
+            } else {
+
+            }
+        }
+        return new WrappedInteger(0);
     }
 }

@@ -46,4 +46,5 @@ public class DatastoreTotalHistory {
     public RunResult getRunResult() {
         return runResult;
     }
+
 }
