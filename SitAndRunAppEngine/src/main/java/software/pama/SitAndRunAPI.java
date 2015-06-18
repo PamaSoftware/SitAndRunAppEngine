@@ -1,7 +1,7 @@
 package software.pama;
 
 
-import static software.pama.OfyService.ofy;
+import static software.pama.utils.OfyService.ofy;
 
 import com.google.api.server.spi.config.Api;
 import com.google.api.server.spi.config.ApiMethod;
@@ -13,6 +13,18 @@ import com.google.appengine.api.oauth.OAuthRequestException;
 import com.google.appengine.api.users.User;
 import com.googlecode.objectify.Key;
 import com.googlecode.objectify.cmd.Query;
+import software.pama.run.datastore.CurrentRunInformation;
+import software.pama.run.RunResult;
+import software.pama.run.RunResultPiece;
+import software.pama.users.datastore.DatastoreProfile;
+import software.pama.users.datastore.DatastoreProfileHistory;
+import software.pama.users.datastore.DatastoreTotalHistory;
+import software.pama.users.Profile;
+import software.pama.utils.Constants;
+import software.pama.utils.Preferences;
+import software.pama.validation.Validator;
+import software.pama.wrapped.WrappedBoolean;
+import software.pama.wrapped.WrappedInteger;
 
 import java.util.*;
 
@@ -95,7 +107,7 @@ public class SitAndRunAPI {
                     Wrzucamy profil do Memcache.
          */
         login = login.toLowerCase();
-        if(!isLoginCorrect(login))
+        if(!Validator.isLoginCorrect(login))
             throw new BadRequestException("Bad parameter format");
         Query<DatastoreProfile> query = ofy().load().type(DatastoreProfile.class).order("login");
         query = query.filter("login =",login);
@@ -155,7 +167,7 @@ public class SitAndRunAPI {
 
         Aplikacja mobilna po otrzymaniu informacji rozpoczyna odliczanie natomiast dopiero wyswietla odliczanie od 10s, powyzej imituje poszukiwanie zawodnika.
          */
-        if(!isPreferencesCorrect(preferences))
+        if(!Validator.isPreferencesCorrect(preferences))
             throw new BadRequestException("Bad parameter format");
 
         DatastoreProfile datastoreProfile = getDatastoreProfile(user);
@@ -169,7 +181,6 @@ public class SitAndRunAPI {
 
         runInfo.setLastDatastoreSavedTime(new Date());
         runInfo.setDuringRace(true);
-        runInfo.setHostRunResult(new RunResult());
         ofy().save().entity(runInfo).now();
         syncCache.put(runInfo.getOwnerLogin(), runInfo);
 
@@ -179,14 +190,81 @@ public class SitAndRunAPI {
     }
 
     /**
-     * Funkcja wykorzystywana do zasygnalizowania, ze jestesmy gotowi do biegu ze znajomym.
+     * Funkcja wykorzystywana do zahostowania biegu ze znajomym.
      *
      * @param preferences - aspiration and reservation
-     * @param gcmID - gcm number
-     * @param friendsLogin - if given we try to join to friend which should be host, if null we start being host
-     * @return 0 if waiting, > 0 if start and then number is the amount of second to wait before start gathering information, < 0 if error
+     * @param friendsLogin -
+     * @return true - everything went well, false - sth went wrong
+     */
+    @ApiMethod(name = "hostRunWithFriend", path = "hostRunWithFriend")
+    public WrappedBoolean hostRunWithFriend(User user, Preferences preferences, @Named("friendsLogin") String friendsLogin) throws OAuthRequestException{
+        //Sprawdzenie poprawnosci danych
+            //czy preferencje sa poprawne
+            //czy login znajomego jest poprawny
+            //czy taki login istnieje
+        //wyciagamy nasz profil z bazy
+        //Anulujemy wszelkie biegi w jakich uczestniczymy, jesli sa w trakcie to z uwzglednieniem statystyk, jesli sa na etapie uzgadniania, tylko usuwamy.
+        //Tworzymy wpis do bazy z wypelnionymi przez nas nazwami, pod memcache bedzie sie on miescil pod kluczem "runwithfriend:friendsLogin"
+        //We wpisie wprowadzamy date utworzenia - oczekiwanie bedzie aktywne przez 60 sekund.
+        //zwracamy true
+        return new WrappedBoolean(true);
+    }
+
+    /**
+     * Funkcja sluzaca sprawdzeniu czy mamy sparowany wyscig.
+     *
+     * @param preferences - aspiration and reservation
+     * @return -1 - blad, 0 - jesli oczekujemy, >0 - czas do startu wyscigu
      */
     @ApiMethod(name = "startRunWithFriend", path = "startRunWithFriend")
+    public WrappedInteger startRunWithFriend(User user, Preferences preferences, @Named("friendsLogin") String friendsLogin) throws OAuthRequestException{
+        //Sprawdzenie poprawnosci parametrow
+        //wyciagamy nasz profil z bazy
+        //sprawdzamy czy istnieje nasz bieg pod kluczem "runwithfriend:friendsLogin"
+            //jesli brak to probujemy wyciagnac z bazy - jesli brak zwracamy blad
+            //jesli jest upewniamy sie ze to bieg z nami
+                //jesli nie, nie ruszamy tego, zwracamy -1
+                //jesli z nami, ale nie ma partnera to zwracamy 0
+        //odczytujemy czas dolaczenia naszego partnera do biegu
+        //usuwamy wpis dotyczacy parowania
+        //tworzymy nowy wpis z biegiem pod kluczem currentRun:login
+        //zwracamy czas do startu (bazowy pomniejszony o czas jaki uplynal od czasu dolaczenia przeciwnika do biegu)
+        return new WrappedInteger(0);
+    }
+
+    /**
+     * Funkcja sluzaca sprawdzeniu czy mamy sparowany wyscig.
+     *
+     * @param preferences - aspiration and reservation
+     * @return -1 - blad, >0 - ustalony dystans
+     */
+    @ApiMethod(name = "joinRunWithFriend", path = "joinRunWithFriend")
+    public WrappedInteger joinRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
+        //Sprawdzenie poprawnosci parametrow
+        //wyciagamy nasz profil z bazy
+        //sprawdzamy czy istnieje nasz bieg pod kluczem "runwithfriend:login"
+        //probujemy wyciagnac z bazy - jesli brak zwracamy blad
+        //jesli jest porownujemy preferencje i dopieramy dystans
+        //uzupelniamy wyciagniety wpis, po czym zapisujemy go do bazy i do memcache pod "runwithfriend:login"
+        //zwracamy ustalony dystans
+        return new WrappedInteger(40);
+    }
+
+    /**
+     * Funkcja sluzaca sprawdzeniu czy host nam sie nie rozlaczyl podczas parowania
+     *
+     * @return true jesli ok, false jesli host stracil polaczenie
+     */
+    @ApiMethod(name = "checkIfHostAvailable", path = "checkIfHostAvailable")
+    public WrappedBoolean checkIfHostAvailable(User user) throws OAuthRequestException{
+        //wyciagamy nasz profil z bazy
+        //sprawdzamy czy jest dla nas przygotowany wyscig
+            //jesli brak to false
+        //uzupelniamy go i zwracamy true
+        return new WrappedBoolean(true);
+    }
+
+/*    @ApiMethod(name = "startRunWithFriend", path = "startRunWithFriend")
     public WrappedInteger startRunWithFriend(User user, Preferences preferences, @Named("gcmID") String gcmID, @Named("friendsLogin") String friendsLogin) throws OAuthRequestException{
         //Sprawdzamy poprawnosc danych
         //Upewniamy sie ze profil istnieje, w tym celu sprawdzamy czy mamy w memcache, jesli nie to staramy sie wyciagnac z bazy
@@ -205,7 +283,7 @@ public class SitAndRunAPI {
             //jezeli preferencje nie maja wspolnej czesci to zwracamy blad sygnalizujacy o tym fakcie, oraz wprowadzamy do wpisu informacje o braku wspolnych preferncji
         return new WrappedInteger(0);
     }
-
+*/
     /**
      * Funkcja wykorzystywana do anulowania udzialu w biegu
      * @return 0 jesli anulowanie przebieglo pomyslnie, <0 jesli nie bylo czego anulowac lub blad
@@ -268,7 +346,7 @@ public class SitAndRunAPI {
         Na podstawie rezultatow przeciwnika i informacji o czasie przewidywania obliczamy pozycje przeciwnika.
         Zwracamy pozycje przeciwnika.
          */
-        if(forecast < 0 || forecast > 30 || !isRunResultCorrect(runResult))
+        if(forecast < 0 || forecast > 30 || !Validator.isRunResultCorrect(runResult))
             throw new BadRequestException("Bad parameter format");
 
         Profile p = signIn(user);
@@ -282,7 +360,7 @@ public class SitAndRunAPI {
                 return null;
         }
 
-        if(currentRunInformation.isRunWithRandom){
+        if(currentRunInformation.isRunWithRandom()){
             //uaktualnienie wpisu
             //sprawdzenie wygranej/przegranej
             //zapis do memcache oraz jesli dawno to do bazy
@@ -443,41 +521,6 @@ public class SitAndRunAPI {
         return currentRunInformation;
     }
 
-    private boolean isPreferencesCorrect(Preferences preferences) {
-        int difference = preferences.getAspiration() - preferences.getReservation();
-        if(difference < 0)
-            difference = -difference;
-        return (preferences.getReservation() > 500 && preferences.getAspiration() > 500 && difference > 100);
-    }
-
-    private boolean isLoginCorrect(String login) {
-        /*
-        Opis dzialania:
-        Sprawdzenie czy login sklada sie tylko i wylacznie z: a-z lub 0-9
-        Tak:
-            Zwracamy true
-        Nie:
-            Zwracamy false
-         */
-        return login.matches("[a-z0-9]+");
-    }
-
-    private boolean isRunResultCorrect(RunResult runResult) {
-        RunResultPiece lastPiece = null;
-        Iterator<RunResultPiece> iterator = runResult.getResults().iterator();
-        while(iterator.hasNext()) {
-            if(lastPiece == null) {
-                lastPiece = iterator.next();
-                continue;
-            }
-            RunResultPiece currentPiece = iterator.next();
-            if(lastPiece.getTime() >= currentPiece.getTime() || lastPiece.getDistance() > currentPiece.getDistance())
-                return false;
-            lastPiece = currentPiece;
-        }
-        return true;
-    }
-
     private RunResultPiece makePrediction(CurrentRunInformation currentRunInformation, boolean predictionForHost, int forecast) {
         //TODO rozwinac opis, zeby zawieral cala metodologie
         /*
@@ -503,7 +546,7 @@ public class SitAndRunAPI {
         int opponentRunPiecesSize = currentRunInformation.getOpponentRunResult().getResults().size();
 
         if(predictionForHost) {
-            if(currentRunInformation.isRunWithRandom) {
+            if(currentRunInformation.isRunWithRandom()) {
                 int lastHostTime = currentRunInformation.getHostRunResult().getResults().get(hostRunPiecesSize - 1).getTime();
                 int predictionTime = lastHostTime + forecast;
                 //sprawdzamy czy nie przegralismy juz w tym momencie
@@ -610,6 +653,8 @@ public class SitAndRunAPI {
         //TODO opis
         //zwraca 0 gdy brak zwyciescy, 1 jesli host, 2 jesli opponent
         if(runWithRand){
+            //TODO zwraca 2 na start???
+/*
             //sprawdzamy czy przekroczylismy dystans wyscigu
             if(host.getResults().get(host.getResults().size()-1).getDistance() > totalDistance) {
                 //sprawdzamy czy pierwsza probka u hosta ktora przekroczyla dystans miala lepszy czas
@@ -642,6 +687,7 @@ public class SitAndRunAPI {
                     return 2;
                 return 0;
             }
+*/
         }else {
 
         }
@@ -728,7 +774,7 @@ public class SitAndRunAPI {
             return new WrappedInteger(-2);
         }
 
-        if(currentRunInformation.isRunWithRandom) {
+        if(currentRunInformation.isRunWithRandom()) {
             ofy().delete().entity(currentRunInformation).now();
             syncCache.delete(p.getLogin());
             return new WrappedInteger(0);

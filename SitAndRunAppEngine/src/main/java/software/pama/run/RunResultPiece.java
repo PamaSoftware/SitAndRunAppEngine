@@ -1,4 +1,4 @@
-package software.pama;
+package software.pama.run;
 
 import java.io.Serializable;
 

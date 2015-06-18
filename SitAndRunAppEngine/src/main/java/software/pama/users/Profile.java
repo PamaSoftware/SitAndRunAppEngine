@@ -1,4 +1,6 @@
-package software.pama;
+package software.pama.users;
+
+import software.pama.users.datastore.DatastoreProfile;
 
 import java.io.Serializable;
 

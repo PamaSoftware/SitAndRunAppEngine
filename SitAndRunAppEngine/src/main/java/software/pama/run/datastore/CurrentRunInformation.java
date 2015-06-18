@@ -1,14 +1,17 @@
-package software.pama;
+package software.pama.run.datastore;
 
 import com.googlecode.objectify.annotation.Entity;
 import com.googlecode.objectify.annotation.Id;
 import com.googlecode.objectify.annotation.Index;
+import software.pama.run.RunResult;
+import software.pama.utils.Preferences;
 
 import java.io.Serializable;
 import java.util.Date;
 
 /**
- * Created by Pawel on 2015-04-25.
+ * This class represent current state of current run.
+ * It is stored in Datastore and also in Memcache under key which is login of the host of the run.
  */
 @Entity
 public class CurrentRunInformation implements Serializable{
@@ -89,4 +92,6 @@ public class CurrentRunInformation implements Serializable{
     public void setDuringRace(boolean isDuringRace) {
         this.isDuringRace = isDuringRace;
     }
+
+    public boolean isRunWithRandom() {return isRunWithRandom;}
 }

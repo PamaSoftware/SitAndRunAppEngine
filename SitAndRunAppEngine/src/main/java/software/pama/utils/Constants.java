@@ -1,4 +1,4 @@
-package software.pama;
+package software.pama.utils;
 
 /**
  * Contains the client IDs and scopes for allowed clients consuming your API.

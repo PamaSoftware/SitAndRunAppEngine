@@ -1,8 +1,12 @@
-package software.pama;
+package software.pama.utils;
 
 import com.googlecode.objectify.Objectify;
 import com.googlecode.objectify.ObjectifyService;
 import com.googlecode.objectify.ObjectifyFactory;
+import software.pama.users.datastore.DatastoreProfile;
+import software.pama.users.datastore.DatastoreProfileHistory;
+import software.pama.users.datastore.DatastoreTotalHistory;
+import software.pama.run.datastore.CurrentRunInformation;
 
 /**
  * Created by Pawel on 2015-03-03.

@@ -1,4 +1,4 @@
-package software.pama;
+package software.pama.wrapped;
 
 /**
  * Created by Pawel on 2015-04-21.
