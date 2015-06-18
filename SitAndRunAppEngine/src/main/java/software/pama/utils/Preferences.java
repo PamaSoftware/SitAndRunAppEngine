@@ -11,6 +11,11 @@ public class Preferences implements Serializable{
 
     public Preferences() {}
 
+    public Preferences(int aspiration, int reservation) {
+        this.aspiration = aspiration;
+        this.reservation = reservation;
+    }
+
     public void setAspiration(int aspiration) {
         this.aspiration = aspiration;
     }

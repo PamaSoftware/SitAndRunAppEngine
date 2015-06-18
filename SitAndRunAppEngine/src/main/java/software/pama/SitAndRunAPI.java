@@ -16,6 +16,7 @@ import com.googlecode.objectify.cmd.Query;
 import software.pama.run.datastore.CurrentRunInformation;
 import software.pama.run.RunResult;
 import software.pama.run.RunResultPiece;
+import software.pama.run.friend.RunMatcher;
 import software.pama.users.datastore.DatastoreProfile;
 import software.pama.users.datastore.DatastoreProfileHistory;
 import software.pama.users.datastore.DatastoreTotalHistory;
@@ -204,9 +205,23 @@ public class SitAndRunAPI {
             //czy taki login istnieje
         //wyciagamy nasz profil z bazy
         //Anulujemy wszelkie biegi w jakich uczestniczymy, jesli sa w trakcie to z uwzglednieniem statystyk, jesli sa na etapie uzgadniania, tylko usuwamy.
-        //Tworzymy wpis do bazy z wypelnionymi przez nas nazwami, pod memcache bedzie sie on miescil pod kluczem "runwithfriend:friendsLogin"
-        //We wpisie wprowadzamy date utworzenia - oczekiwanie bedzie aktywne przez 60 sekund.
+        //Tworzymy wpis do bazy z wypelnionymi przez nas polami
+        //zapisujemy wpis do memcache pod "runMatch:ourLogin"
         //zwracamy true
+        if(!Validator.isPreferencesCorrect(preferences) || !Validator.isLoginCorrect(friendsLogin))
+            return new WrappedBoolean(false);
+        //TODO
+        //if(!checkIfLoginExist(friendsLogin))
+            //return new WrappedBoolean(false);
+        Profile ourProfile = signIn(user);
+        if(ourProfile == null)
+            return new WrappedBoolean(false);
+        //TODO anulowanie wszystkich naszych biegow z uwzglednieniem dodania statystyk (przeanalizowac funkcje usuwajaca)
+        cancelRun(user);
+        //TODO zadbac o usuniecie wpisow parowania ktore do nas naleza
+        RunMatcher runMatcher = new RunMatcher(ourProfile.getLogin(), friendsLogin, preferences);
+        ofy().save().entity(runMatcher).now();
+        syncCache.put("runMatch:".concat(ourProfile.getLogin()), runMatcher);
         return new WrappedBoolean(true);
     }
 
@@ -217,18 +232,31 @@ public class SitAndRunAPI {
      * @return -1 - blad, 0 - jesli oczekujemy, >0 - czas do startu wyscigu
      */
     @ApiMethod(name = "startRunWithFriend", path = "startRunWithFriend")
-    public WrappedInteger startRunWithFriend(User user, Preferences preferences, @Named("friendsLogin") String friendsLogin) throws OAuthRequestException{
+    public WrappedInteger startRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
         //Sprawdzenie poprawnosci parametrow
         //wyciagamy nasz profil z bazy
-        //sprawdzamy czy istnieje nasz bieg pod kluczem "runwithfriend:friendsLogin"
+        //sprawdzamy czy istnieje nasz bieg pod kluczem "runMatch:ourLogin"
             //jesli brak to probujemy wyciagnac z bazy - jesli brak zwracamy blad
             //jesli jest upewniamy sie ze to bieg z nami
-                //jesli nie, nie ruszamy tego, zwracamy -1
-                //jesli z nami, ale nie ma partnera to zwracamy 0
+        //jesli nie ma partnera to zwracamy 0
         //odczytujemy czas dolaczenia naszego partnera do biegu
         //usuwamy wpis dotyczacy parowania
         //tworzymy nowy wpis z biegiem pod kluczem currentRun:login
         //zwracamy czas do startu (bazowy pomniejszony o czas jaki uplynal od czasu dolaczenia przeciwnika do biegu)
+        if(!Validator.isPreferencesCorrect(preferences))
+            return new WrappedInteger(-1);
+        Profile ourProfile = signIn(user);
+        RunMatcher runMatcher = (RunMatcher) syncCache.get("runMatch:".concat(ourProfile.getLogin()));
+        if(runMatcher == null) {
+            Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("hostLogin");
+            query = query.filter("hostLogin =",ourProfile.getLogin());
+            runMatcher = query.first().now();
+            if(runMatcher == null)
+                return new WrappedInteger(-1);
+        }
+        if(!runMatcher.isComplete())
+            return new WrappedInteger(0);
+
         return new WrappedInteger(0);
     }
 
@@ -255,8 +283,8 @@ public class SitAndRunAPI {
      *
      * @return true jesli ok, false jesli host stracil polaczenie
      */
-    @ApiMethod(name = "checkIfHostAvailable", path = "checkIfHostAvailable")
-    public WrappedBoolean checkIfHostAvailable(User user) throws OAuthRequestException{
+    @ApiMethod(name = "checkIfHostAlive", path = "checkIfHostAlive")
+    public WrappedBoolean checkIfHostAlive(User user) throws OAuthRequestException{
         //wyciagamy nasz profil z bazy
         //sprawdzamy czy jest dla nas przygotowany wyscig
             //jesli brak to false
