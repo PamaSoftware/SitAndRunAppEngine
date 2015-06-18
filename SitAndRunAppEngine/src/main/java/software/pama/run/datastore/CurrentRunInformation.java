@@ -4,6 +4,7 @@ import com.googlecode.objectify.annotation.Entity;
 import com.googlecode.objectify.annotation.Id;
 import com.googlecode.objectify.annotation.Index;
 import software.pama.run.RunResult;
+import software.pama.run.friend.RunMatcher;
 import software.pama.utils.Preferences;
 
 import java.io.Serializable;
@@ -18,24 +19,29 @@ public class CurrentRunInformation implements Serializable{
     @Id
     Long id;
     int distance = 0;
-    @Index
-    String ownerLogin;
+    //@Index
+    //String ownerLogin;
     @Index
     String hostLogin;
-    Preferences hostPreferences;
+    @Index
+    String opponentLogin;
     RunResult hostRunResult;
     RunResult opponentRunResult;
     boolean isRunWithRandom;
-    boolean isDuringRace = false;
     Date lastDatastoreSavedTime;
+    //used in run with random only
+    Preferences hostPreferences;
 
-    public void setOwnerLogin(String ownerLogin) {
+    public CurrentRunInformation() {
+    }
+
+    /*public void setOwnerLogin(String ownerLogin) {
         this.ownerLogin = ownerLogin;
     }
 
     public String getOwnerLogin() {
         return ownerLogin;
-    }
+    }*/
 
     public void setDistance(int distance) {
         this.distance = distance;
@@ -51,6 +57,14 @@ public class CurrentRunInformation implements Serializable{
 
     public String getHostLogin() {
         return hostLogin;
+    }
+
+    public void setOpponentLogin(String opponentLogin) {
+        this.opponentLogin = opponentLogin;
+    }
+
+    public String getOpponentLogin() {
+        return opponentLogin;
     }
 
     public void setHostPreferences(Preferences hostPreferences) {
@@ -87,10 +101,6 @@ public class CurrentRunInformation implements Serializable{
 
     public Date getLastDatastoreSavedTime() {
         return lastDatastoreSavedTime;
-    }
-
-    public void setDuringRace(boolean isDuringRace) {
-        this.isDuringRace = isDuringRace;
     }
 
     public boolean isRunWithRandom() {return isRunWithRandom;}

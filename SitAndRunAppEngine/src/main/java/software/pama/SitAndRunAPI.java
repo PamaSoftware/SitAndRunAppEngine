@@ -22,12 +22,14 @@ import software.pama.users.datastore.DatastoreProfileHistory;
 import software.pama.users.datastore.DatastoreTotalHistory;
 import software.pama.users.Profile;
 import software.pama.utils.Constants;
+import software.pama.utils.DateHelper;
 import software.pama.utils.Preferences;
 import software.pama.validation.Validator;
 import software.pama.wrapped.WrappedBoolean;
 import software.pama.wrapped.WrappedInteger;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Created by Pawel on 2015-01-17.
@@ -181,9 +183,8 @@ public class SitAndRunAPI {
         CurrentRunInformation runInfo = findRandomOpponent(datastoreProfile, preferences);
 
         runInfo.setLastDatastoreSavedTime(new Date());
-        runInfo.setDuringRace(true);
         ofy().save().entity(runInfo).now();
-        syncCache.put(runInfo.getOwnerLogin(), runInfo);
+        syncCache.put(runInfo.getHostLogin(), runInfo);
 
         Random generator = new Random();
         int i = generator.nextInt(30) + 30;
@@ -256,8 +257,19 @@ public class SitAndRunAPI {
         }
         if(!runMatcher.isComplete())
             return new WrappedInteger(0);
-
-        return new WrappedInteger(0);
+        CurrentRunInformation currentRunInformation = new CurrentRunInformation();
+        currentRunInformation.setHostLogin(runMatcher.getHostLogin());
+        currentRunInformation.setOpponentLogin(runMatcher.getOpponentLogin());
+        currentRunInformation.setRunWithRandom(false);
+        currentRunInformation.setDistance(runMatcher.getDistance());
+        currentRunInformation.setLastDatastoreSavedTime(new Date());
+        Date createDate = runMatcher.getAcceptByOpponentDate();
+        ofy().delete().entity(runMatcher).now();
+        ofy().save().entity(currentRunInformation).now();
+        syncCache.delete("runMatch:".concat(ourProfile.getLogin()));
+        syncCache.put(ourProfile.getLogin(), currentRunInformation);
+        int d = (int) DateHelper.getDateDiff(createDate, new Date(), TimeUnit.SECONDS);
+        return new WrappedInteger(40 - d);
     }
 
     /**
@@ -270,12 +282,45 @@ public class SitAndRunAPI {
     public WrappedInteger joinRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
         //Sprawdzenie poprawnosci parametrow
         //wyciagamy nasz profil z bazy
-        //sprawdzamy czy istnieje nasz bieg pod kluczem "runwithfriend:login"
+        //wyciagamy z bazy wpis gdzie widnieje nasz login jako opponent
         //probujemy wyciagnac z bazy - jesli brak zwracamy blad
-        //jesli jest porownujemy preferencje i dopieramy dystans
+        //jesli jest porownujemy preferencje i dobieramy dystans
         //uzupelniamy wyciagniety wpis, po czym zapisujemy go do bazy i do memcache pod "runwithfriend:login"
         //zwracamy ustalony dystans
-        return new WrappedInteger(40);
+        if(!Validator.isPreferencesCorrect(preferences))
+            return new WrappedInteger(-1);
+        Profile ourProfile = signIn(user);
+        Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("opponentLogin");
+        query = query.filter("opponentLogin =",ourProfile.getLogin());
+        List<RunMatcher> runMatcherList = query.list();
+        if(runMatcherList == null)
+            return new WrappedInteger(-2);
+        RunMatcher newestRun = null;
+        Iterator<RunMatcher> iterator = runMatcherList.iterator();
+        while(iterator.hasNext()) {
+            if (newestRun == null) {
+                newestRun = iterator.next();
+                continue;
+            }
+            RunMatcher r = iterator.next();
+            if (newestRun.getCreateDate().before(r.getCreateDate()))
+                newestRun = r;
+        }
+        //To nigdy nie powinno miec miejsce, napisane, zeby kompilator nie mial watpliwosci
+        if(newestRun == null)
+            return new WrappedInteger(-3);
+        runMatcherList.remove(newestRun);
+        ofy().delete().entities(runMatcherList).now();
+        int distance = countDistance(preferences, newestRun.getHostPreferences());
+        if(distance < 0)
+            return new WrappedInteger(-4);
+        newestRun.setDistance(distance);
+        newestRun.setAcceptByOpponentDate(new Date());
+        newestRun.setComplete(true);
+        ofy().save().entity(newestRun).now();
+        syncCache.put("runMatch:".concat(newestRun.getHostLogin()), newestRun);
+        syncCache.put("whoIsHostInMyRun:".concat(ourProfile.getLogin()), newestRun.getHostLogin());
+        return new WrappedInteger(distance);
     }
 
     /**
@@ -289,6 +334,14 @@ public class SitAndRunAPI {
         //sprawdzamy czy jest dla nas przygotowany wyscig
             //jesli brak to false
         //uzupelniamy go i zwracamy true
+
+        //PO WYWOLANIU WE WPISIE TRZEBA USTAWIC FLAGE ZE ZOSTALO TO SPRAWDZONE BY WIEDZIEC ZE PO TYM FAKCIE NIE MA WYMOWEK CO DO STATYSTYK
+
+        //sprawdzamy czy nasz RunMatcher jest w bazie caly czas.
+        //jesli jest to sprawdzamy czy uplynelo 20sekund odkad go stworzylismy jako complete (complete musi byc, jesli nie to nie ma o czym mowic blad odrazu)
+        //jesli minelo mniej niz 20s to blad
+        //jesli wiecej to informacja ze host nam sie rozlaczyl i rozpoczynamy usuwanie wyscigu
+        //jesli brak wpisu to upewniamy sie w bazie danych czy mamy juz bieg. Jesli mamy to zwracamy ze wszystko super, jesli nie to blad i czyscimy nasze dane.
         return new WrappedBoolean(true);
     }
 
@@ -515,7 +568,7 @@ public class SitAndRunAPI {
         CurrentRunInformation currentRunInformation = new CurrentRunInformation();
         currentRunInformation.setRunWithRandom(true);
 
-        currentRunInformation.setOwnerLogin(datastoreProfile.getLogin());
+        //currentRunInformation.setOwnerLogin(datastoreProfile.getLogin());
         currentRunInformation.setHostLogin(datastoreProfile.getLogin());
         currentRunInformation.setHostPreferences(preferences);
 
@@ -727,8 +780,8 @@ public class SitAndRunAPI {
     }
 
     private CurrentRunInformation getNotFinishedRun(String login) {
-        Query<CurrentRunInformation> query = ofy().load().type(CurrentRunInformation.class).order("ownerLogin");
-        query = query.filter("ownerLogin =",login);
+        Query<CurrentRunInformation> query = ofy().load().type(CurrentRunInformation.class).order("hostLogin");
+        query = query.filter("hostLogin =",login);
         return query.first().now();
     }
 
@@ -814,5 +867,10 @@ public class SitAndRunAPI {
             }
         }
         return new WrappedInteger(0);
+    }
+
+    private int countDistance(Preferences p1, Preferences p2) {
+        //TODO
+        return 10;
     }
 }

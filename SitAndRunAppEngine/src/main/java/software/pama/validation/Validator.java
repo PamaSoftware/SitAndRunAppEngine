@@ -14,7 +14,7 @@ public class Validator {
         int difference = preferences.getAspiration() - preferences.getReservation();
         if(difference < 0)
             difference = -difference;
-        return (preferences.getReservation() > 500 && preferences.getAspiration() > 500 && difference > 100);
+        return (preferences.getReservation() >= 500 && preferences.getAspiration() >= 500 && difference >= 100);
     }
 
     public static boolean isLoginCorrect(String login) {

@@ -5,13 +5,14 @@ import com.googlecode.objectify.annotation.Id;
 import com.googlecode.objectify.annotation.Index;
 import software.pama.utils.Preferences;
 
+import java.io.Serializable;
 import java.util.Date;
 
 /**
  * Created by Pawel on 2015-06-18.
  */
 @Entity
-public class RunMatcher {
+public class RunMatcher implements Serializable{
     @Id
     Long id;
     @Index
@@ -19,10 +20,10 @@ public class RunMatcher {
     @Index
     String opponentLogin;
     Preferences hostPreferences;
-    Preferences opponentPreferences;
     Boolean complete = false;
     Date createDate;
     Date acceptByOpponentDate;
+    int distance = 0;
 
     public RunMatcher(String hostLogin, String opponentLogin, Preferences hostPreferences) {
         this.hostLogin = hostLogin;
@@ -31,8 +32,16 @@ public class RunMatcher {
         createDate = new Date();
     }
 
-    public void setOpponentPreferences(Preferences opponentPreferences) {
-        this.opponentPreferences = opponentPreferences;
+    public void setDistance(int distance) {
+        this.distance = distance;
+    }
+
+    public int getDistance() {
+        return distance;
+    }
+
+    public String getOpponentLogin() {
+        return opponentLogin;
     }
 
     public void setComplete(Boolean complete) {
