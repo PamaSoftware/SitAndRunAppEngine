@@ -3,6 +3,7 @@ package software.pama.utils;
 import com.googlecode.objectify.Objectify;
 import com.googlecode.objectify.ObjectifyService;
 import com.googlecode.objectify.ObjectifyFactory;
+import software.pama.run.datastore.RunResultDatastore;
 import software.pama.run.friend.RunMatcher;
 import software.pama.users.datastore.DatastoreProfile;
 import software.pama.users.datastore.DatastoreProfileHistory;
@@ -19,6 +20,7 @@ public class OfyService {
         factory().register(DatastoreTotalHistory.class);
         factory().register(CurrentRunInformation.class);
         factory().register(RunMatcher.class);
+        factory().register(RunResultDatastore.class);
     }
 
     public static Objectify ofy() {

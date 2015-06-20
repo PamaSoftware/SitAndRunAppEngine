@@ -19,15 +19,16 @@ public class CurrentRunInformation implements Serializable{
     @Id
     Long id;
     int distance = 0;
-    //@Index
-    //String ownerLogin;
     @Index
     String hostLogin;
     @Index
     String opponentLogin;
+    String hostRunResultId;
+    String opponentRunResultId;
     RunResult hostRunResult;
     RunResult opponentRunResult;
     boolean isRunWithRandom;
+    Date createTime;
     Date lastDatastoreSavedTime;
     //used in run with random only
     Preferences hostPreferences;
@@ -37,13 +38,29 @@ public class CurrentRunInformation implements Serializable{
     public CurrentRunInformation() {
     }
 
-    /*public void setOwnerLogin(String ownerLogin) {
-        this.ownerLogin = ownerLogin;
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
     }
 
-    public String getOwnerLogin() {
-        return ownerLogin;
-    }*/
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setHostRunResultId() {
+        this.hostRunResultId = lastDatastoreSavedTime.toString().concat(hostLogin);
+    }
+
+    public String getHostRunResultId() {
+        return hostRunResultId;
+    }
+
+    public void setOpponentRunResultId() {
+        this.opponentRunResultId = lastDatastoreSavedTime.toString().concat(opponentLogin);
+    }
+
+    public String getOpponentRunResultId() {
+        return opponentRunResultId;
+    }
 
     public void setStarted(boolean started) {
         this.started = started;

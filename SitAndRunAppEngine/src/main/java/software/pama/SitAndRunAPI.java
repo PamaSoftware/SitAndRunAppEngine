@@ -16,6 +16,7 @@ import com.googlecode.objectify.cmd.Query;
 import software.pama.run.datastore.CurrentRunInformation;
 import software.pama.run.RunResult;
 import software.pama.run.RunResultPiece;
+import software.pama.run.datastore.RunResultDatastore;
 import software.pama.run.friend.RunMatcher;
 import software.pama.users.datastore.DatastoreProfile;
 import software.pama.users.datastore.DatastoreProfileHistory;
@@ -177,7 +178,8 @@ public class SitAndRunAPI {
             cancelCurrentRun(user);
 
         CurrentRunInformation runInfo = findRandomOpponent(datastoreProfile, preferences);
-
+        runInfo.setStarted(true);
+        runInfo.setCreateTime(new Date());
         runInfo.setLastDatastoreSavedTime(new Date());
         ofy().save().entity(runInfo).now();
         syncCache.put(runInfo.getHostLogin(), runInfo);
@@ -262,9 +264,16 @@ public class SitAndRunAPI {
         currentRunInformation.setRunWithRandom(false);
         currentRunInformation.setDistance(runMatcher.getDistance());
         currentRunInformation.setLastDatastoreSavedTime(new Date());
+        currentRunInformation.setCreateTime(new Date());
+        currentRunInformation.setHostRunResultId();
+        currentRunInformation.setOpponentRunResultId();
         Date acceptByOpponentDate = runMatcher.getAcceptByOpponentDate();
+        RunResultDatastore hostRunResult = new RunResultDatastore();
+        hostRunResult.setId(currentRunInformation.getHostRunResultId());
+        RunResultDatastore opponentRunResult = new RunResultDatastore();
+        opponentRunResult.setId(currentRunInformation.getOpponentRunResultId());
         ofy().delete().entity(runMatcher).now();
-        ofy().save().entity(currentRunInformation).now();
+        ofy().save().entities(currentRunInformation, hostRunResult, opponentRunResult).now();
         syncCache.delete("runMatch:".concat(ourProfile.getLogin()));
         syncCache.put(ourProfile.getLogin(), currentRunInformation);
         int d = (int) DateHelper.getDateDiff(acceptByOpponentDate, new Date(), TimeUnit.SECONDS);
@@ -484,7 +493,7 @@ public class SitAndRunAPI {
                 String login= (String) syncCache.get("whoIsHostInMyRun:".concat(p.getLogin()));
                 currentRunInformation = (CurrentRunInformation) syncCache.get(login);
                 if(currentRunInformation == null) {
-                    currentRunInformation = getNotFinishedRun(login);
+                    currentRunInformation = getNotFinishedRunForOpponent(login);
                     if(currentRunInformation == null)
                         return null;
                 }
@@ -578,10 +587,76 @@ public class SitAndRunAPI {
 
             return makePrediction(currentRunInformation, true, forecast);
         } else {
-            //TODO bezpiecznie watkowo
-            //sprawdzenie czy host
+            //sprawdzenie czy mamy do czynienia z hostem
+            //uaktualnienie wpisu
+            //sprawdzenie wygranej/przegranej
+            //zapis do memcache oraz jesli dawno to do bazy
+            //przewidzenie pozycji przeciwnika
+            boolean isHost = currentRunInformation.getHostLogin() == p.getLogin();
+            RunResult playerRunResult;
+            /*
+            if(isHost)
+                playerRunResult = currentRunInformation.getHostRunResult();
+            else
+                playerRunResult = currentRunInformation.getOpponentRunResult();
+
+            if(playerRunResult == null)
+                playerRunResult = new RunResult(runResult.getResults());
+            else {
+                RunResultPiece playerLastRunResultPiece = playerRunResult.getResults().get(playerRunResult.getResults().size()-1);
+                RunResultPiece parameterFirstRunResultPiece = runResult.getResults().get(runResult.getResults().size()-1);
+                if(playerLastRunResultPiece.getTime() >= parameterFirstRunResultPiece.getTime())
+                    throw new BadRequestException("Run results are redundant");
+                if(playerLastRunResultPiece.getDistance() > parameterFirstRunResultPiece.getDistance())
+                    throw new BadRequestException("Run results are wrong");
+                playerRunResult.addResults(runResult.getResults());
+            }
+            if(isHost)
+                currentRunInformation.setHostRunResult(playerRunResult);
+            else
+                currentRunInformation.setOpponentRunResult(playerRunResult);
+            */
+            Key key;
+            Key playerKey;
+            Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
+            Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
+            Map<Key<RunResultDatastore>, RunResultDatastore> resultRunMap = ofy().load().keys(hostKey, opponentKey);
+            if(isHost) {
+                playerKey = hostKey;
+                playerRunResult = resultRunMap.get(hostKey).getRunResult();
+            } else {
+                playerKey = opponentKey;
+                playerRunResult = resultRunMap.get(opponentKey).getRunResult();
+            }
+            if(playerRunResult == null)
+                playerRunResult = new RunResult(runResult.getResults());
+            else {
+                RunResultPiece playerLastRunResultPiece = playerRunResult.getResults().get(playerRunResult.getResults().size()-1);
+                RunResultPiece parameterFirstRunResultPiece = runResult.getResults().get(runResult.getResults().size()-1);
+                if(playerLastRunResultPiece.getTime() >= parameterFirstRunResultPiece.getTime())
+                    throw new BadRequestException("Run results are redundant");
+                if(playerLastRunResultPiece.getDistance() > parameterFirstRunResultPiece.getDistance())
+                    throw new BadRequestException("Run results are wrong");
+                playerRunResult.addResults(runResult.getResults());
+            }
+            resultRunMap.get(playerKey).setRunResult(playerRunResult);
+            ofy().save().entity(resultRunMap.get(playerKey)).now();
+
+            int winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false);
+
+            //TODO oblsuga wygranej
+
+            syncCache.put(currentRunInformation.getHostLogin(), currentRunInformation);
+            if(new Date().getTime() - currentRunInformation.getLastDatastoreSavedTime().getTime() > 1000*30) {
+                currentRunInformation.setLastDatastoreSavedTime(new Date());
+                ofy().save().entity(currentRunInformation).now();
+            }
+
+            if(isHost)
+                return makePrediction(currentRunInformation, true, forecast);
+            else
+                return makePrediction(currentRunInformation, false, forecast);
         }
-        return new RunResultPiece(1, 0);
     }
 
     /**
