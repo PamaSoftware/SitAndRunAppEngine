@@ -31,6 +31,8 @@ public class CurrentRunInformation implements Serializable{
     Date lastDatastoreSavedTime;
     //used in run with random only
     Preferences hostPreferences;
+    //uif this is true and you will cancel this run system will also change statistics
+    boolean started = false;
 
     public CurrentRunInformation() {
     }
@@ -42,6 +44,14 @@ public class CurrentRunInformation implements Serializable{
     public String getOwnerLogin() {
         return ownerLogin;
     }*/
+
+    public void setStarted(boolean started) {
+        this.started = started;
+    }
+
+    public boolean getStarted() {
+        return started;
+    }
 
     public void setDistance(int distance) {
         this.distance = distance;

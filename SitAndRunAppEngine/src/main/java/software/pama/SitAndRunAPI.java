@@ -112,17 +112,13 @@ public class SitAndRunAPI {
         login = login.toLowerCase();
         if(!Validator.isLoginCorrect(login))
             throw new BadRequestException("Bad parameter format");
-        Query<DatastoreProfile> query = ofy().load().type(DatastoreProfile.class).order("login");
-        query = query.filter("login =",login);
-        if(query.first().now() == null){
-            DatastoreProfile datastoreProfile = new DatastoreProfile(user.getEmail(), login);
-            ofy().save().entity(datastoreProfile).now();
-            Profile p = new Profile(login);
-            syncCache.put(user.getEmail(), p);
-            return p;
-        }else {
+        if(checkIfLoginExist(login))
             return null;
-        }
+        DatastoreProfile datastoreProfile = new DatastoreProfile(user.getEmail(), login);
+        ofy().save().entity(datastoreProfile).now();
+        Profile p = new Profile(login);
+        syncCache.put(user.getEmail(), p);
+        return p;
     }
 
     /**
@@ -211,9 +207,8 @@ public class SitAndRunAPI {
         //zwracamy true
         if(!Validator.isPreferencesCorrect(preferences) || !Validator.isLoginCorrect(friendsLogin))
             return new WrappedBoolean(false);
-        //TODO
-        //if(!checkIfLoginExist(friendsLogin))
-            //return new WrappedBoolean(false);
+        if(!checkIfLoginExist(friendsLogin))
+            return new WrappedBoolean(false);
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
             return new WrappedBoolean(false);
@@ -247,6 +242,9 @@ public class SitAndRunAPI {
         if(!Validator.isPreferencesCorrect(preferences))
             return new WrappedInteger(-1);
         Profile ourProfile = signIn(user);
+        if(ourProfile == null)
+            return new WrappedInteger(-1);
+        //TODO anulowanie wszystkich trwajacych biegow
         RunMatcher runMatcher = (RunMatcher) syncCache.get("runMatch:".concat(ourProfile.getLogin()));
         if(runMatcher == null) {
             Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("hostLogin");
@@ -254,6 +252,7 @@ public class SitAndRunAPI {
             runMatcher = query.first().now();
             if(runMatcher == null)
                 return new WrappedInteger(-1);
+            syncCache.put("runMatch:".concat(ourProfile.getLogin()), runMatcher);
         }
         if(!runMatcher.isComplete())
             return new WrappedInteger(0);
@@ -263,12 +262,12 @@ public class SitAndRunAPI {
         currentRunInformation.setRunWithRandom(false);
         currentRunInformation.setDistance(runMatcher.getDistance());
         currentRunInformation.setLastDatastoreSavedTime(new Date());
-        Date createDate = runMatcher.getAcceptByOpponentDate();
+        Date acceptByOpponentDate = runMatcher.getAcceptByOpponentDate();
         ofy().delete().entity(runMatcher).now();
         ofy().save().entity(currentRunInformation).now();
         syncCache.delete("runMatch:".concat(ourProfile.getLogin()));
         syncCache.put(ourProfile.getLogin(), currentRunInformation);
-        int d = (int) DateHelper.getDateDiff(createDate, new Date(), TimeUnit.SECONDS);
+        int d = (int) DateHelper.getDateDiff(acceptByOpponentDate, new Date(), TimeUnit.SECONDS);
         return new WrappedInteger(40 - d);
     }
 
@@ -290,6 +289,8 @@ public class SitAndRunAPI {
         if(!Validator.isPreferencesCorrect(preferences))
             return new WrappedInteger(-1);
         Profile ourProfile = signIn(user);
+        if(ourProfile == null)
+            return new WrappedInteger(-1);
         Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("opponentLogin");
         query = query.filter("opponentLogin =",ourProfile.getLogin());
         List<RunMatcher> runMatcherList = query.list();
@@ -328,8 +329,8 @@ public class SitAndRunAPI {
      *
      * @return true jesli ok, false jesli host stracil polaczenie
      */
-    @ApiMethod(name = "checkIfHostAlive", path = "checkIfHostAlive")
-    public WrappedBoolean checkIfHostAlive(User user) throws OAuthRequestException{
+    @ApiMethod(name = "checkIfHostIsAlive", path = "checkIfHostIsAlive")
+    public WrappedBoolean checkIfHostIsAlive(User user) throws OAuthRequestException{
         //wyciagamy nasz profil z bazy
         //sprawdzamy czy jest dla nas przygotowany wyscig
             //jesli brak to false
@@ -342,31 +343,73 @@ public class SitAndRunAPI {
         //jesli minelo mniej niz 20s to blad
         //jesli wiecej to informacja ze host nam sie rozlaczyl i rozpoczynamy usuwanie wyscigu
         //jesli brak wpisu to upewniamy sie w bazie danych czy mamy juz bieg. Jesli mamy to zwracamy ze wszystko super, jesli nie to blad i czyscimy nasze dane.
-        return new WrappedBoolean(true);
+
+        //sprawdzamy czy istnieje nasz profil
+        //sprawdzamy czy juz jest stworzone CurrentRunState
+        //tak:
+            //sprawdzamy czy nasz RunMatcher usuniety z bazy i z memcache
+            //tak:
+                //sprawdzamy czy
+                //zapisujemy do CurrentRuntRunStateflage ze biegniemy
+            //nie:
+                //nie powinno byc takiej sytuacji - zwracamy blad
+        //nie:
+            //sprawdzamy czy istnieje nasz RunMatcher - probujemy wyciagnac
+            //istnieje mamy go:
+                //sprawdzamy czy minelo wiecej niz 20 sekund odkad go wypelnilismy metoda joinRunWithFriend
+                //nie lub brak daty wypelnienia:
+                    //zwracamy blad
+                //minelo wiecej:
+                    //nasz host sie rozlaczyl - czyscimy caly bieg, zwracamy blad
+             //nie istnieje:
+                //zwracamy blad
+        Profile ourProfile = signIn(user);
+        if(ourProfile == null)
+            return new WrappedBoolean(false);
+
+        CurrentRunInformation currentRunInformation = (CurrentRunInformation) syncCache.get(ourProfile.getLogin());
+        if(currentRunInformation == null) {
+            Query<CurrentRunInformation> query = ofy().load().type(CurrentRunInformation.class).order("opponentLogin");
+            query = query.filter("opponentLogin =",ourProfile.getLogin());
+            currentRunInformation = query.first().now();
+            if(currentRunInformation == null) {
+                //sprawdzamy czy istnieje nasz RunMatcher - probujemy wyciagnac
+
+                RunMatcher runMatcher = (RunMatcher) syncCache.get("runMatch:".concat(ourProfile.getLogin()));
+                if(runMatcher == null) {
+                    Query<RunMatcher> query2 = ofy().load().type(RunMatcher.class).order("opponentLogin");
+                    query2 = query2.filter("opponentLogin =",ourProfile.getLogin());
+                    runMatcher = query2.first().now();
+                    if(runMatcher == null)
+                        return new WrappedBoolean(false);
+                }
+                if(DateHelper.getDateDiff(runMatcher.getAcceptByOpponentDate(), new Date(), TimeUnit.SECONDS) > 20) {
+                    //host sie rozlaczyl
+                    //TODO czyscimy caly bieg
+                    return new WrappedBoolean(false);
+                }
+                return new WrappedBoolean(false);
+            }
+        }
+
+        if(currentRunInformation.getStarted())
+            return new WrappedBoolean(false);
+        RunMatcher runMatcher = (RunMatcher) syncCache.get("runMatch:".concat(ourProfile.getLogin()));
+        if(runMatcher == null) {
+            Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("opponentLogin");
+            query = query.filter("opponentLogin =",ourProfile.getLogin());
+            runMatcher = query.first().now();
+            if(runMatcher == null) {
+                currentRunInformation.setStarted(true);
+                ofy().save().entity(currentRunInformation);
+                return new WrappedBoolean(true);
+            }
+        }
+        return new WrappedBoolean(false);
     }
 
-/*    @ApiMethod(name = "startRunWithFriend", path = "startRunWithFriend")
-    public WrappedInteger startRunWithFriend(User user, Preferences preferences, @Named("gcmID") String gcmID, @Named("friendsLogin") String friendsLogin) throws OAuthRequestException{
-        //Sprawdzamy poprawnosc danych
-        //Upewniamy sie ze profil istnieje, w tym celu sprawdzamy czy mamy w memcache, jesli nie to staramy sie wyciagnac z bazy
-        //jezeli nie ma profilu zwracamy blad -1
-
-        //jezeli mamy do czynienia z hostem
-        //jezeli nie istnieje to stworzenie wpisu w Memcache oznaczajacego oczekiwanie
-        //jezeli istnieje to sprawdzenie czy mamy kandydata do biegu
-            //jesli nie ma to uaktualniamy date tylko
-            //jesli mamy to tworzymy juz w pelni prawidlowy wpis w memcache oraz w bazie danych i zwracamy ilosc sekund do odliczenia wyliczajac to z daty wzietej z wpisu (gosc podmienil date na date startu) i na podstawie roznicy z aktualna data zwracamy ilosc sekund
-
-        //jezeli mamy do czynienia z gosciem
-        //sprawdzamy czy jest w memcache wpis jezeli nie ma odczekujemy 5 sekund i sprawdzamy ponownie jesli nie ma to zwracamy blad
-        //jesli jest to porownujemy z naszymi preferencjami
-            //jezeli sie zgadzaja to tworzymy sobie wlasny wpis w memcache dotyczacy biegu po czym zapisujemy do wpisu hosta informacje o naszej checi  uczestnictwa wraz z czasem startu oraz dystansem wynikajacym z naszych wspolnych preferencji, po czym zwracamy liczbe sekund do startu
-            //jezeli preferencje nie maja wspolnej czesci to zwracamy blad sygnalizujacy o tym fakcie, oraz wprowadzamy do wpisu informacje o braku wspolnych preferncji
-        return new WrappedInteger(0);
-    }
-*/
     /**
-     * Funkcja wykorzystywana do anulowania udzialu w biegu
+     * Funkcja wykorzystywana do anulowania udzialu w biegu z uwzglednieniem statystyk
      * @return 0 jesli anulowanie przebieglo pomyslnie, <0 jesli nie bylo czego anulowac lub blad
      */
     @ApiMethod(name = "cancelRun", path = "cancelRun")
@@ -437,8 +480,15 @@ public class SitAndRunAPI {
         CurrentRunInformation currentRunInformation = (CurrentRunInformation) syncCache.get(p.getLogin());
         if(currentRunInformation == null) {
             currentRunInformation = getNotFinishedRun(p.getLogin());
-            if(currentRunInformation == null)
-                return null;
+            if(currentRunInformation == null) {
+                String login= (String) syncCache.get("whoIsHostInMyRun:".concat(p.getLogin()));
+                currentRunInformation = (CurrentRunInformation) syncCache.get(login);
+                if(currentRunInformation == null) {
+                    currentRunInformation = getNotFinishedRun(login);
+                    if(currentRunInformation == null)
+                        return null;
+                }
+            }
         }
 
         if(currentRunInformation.isRunWithRandom()){
@@ -785,6 +835,12 @@ public class SitAndRunAPI {
         return query.first().now();
     }
 
+    private CurrentRunInformation getNotFinishedRunForOpponent(String login) {
+        Query<CurrentRunInformation> query = ofy().load().type(CurrentRunInformation.class).order("opponentLogin");
+        query = query.filter("opponentLogin =",login);
+        return query.first().now();
+    }
+
     /**
      * Function to count average speed.
      * @param distance meters
@@ -872,5 +928,14 @@ public class SitAndRunAPI {
     private int countDistance(Preferences p1, Preferences p2) {
         //TODO
         return 10;
+    }
+
+    private boolean checkIfLoginExist(String login) {
+        Query<DatastoreProfile> query = ofy().load().type(DatastoreProfile.class).order("login");
+        query = query.filter("login =",login);
+        if(query.first().now() == null)
+            return false;
+        else
+            return true;
     }
 }
