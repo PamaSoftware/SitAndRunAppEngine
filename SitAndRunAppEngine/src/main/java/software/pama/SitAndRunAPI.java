@@ -616,7 +616,6 @@ public class SitAndRunAPI {
             else
                 currentRunInformation.setOpponentRunResult(playerRunResult);
             */
-            Key key;
             Key playerKey;
             Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
             Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
@@ -640,22 +639,56 @@ public class SitAndRunAPI {
                 playerRunResult.addResults(runResult.getResults());
             }
             resultRunMap.get(playerKey).setRunResult(playerRunResult);
+            //TODO po refaktoryzacji zapisywanie do bazy raz na jakis czas
             ofy().save().entity(resultRunMap.get(playerKey)).now();
 
+            if(currentRunInformation.isWinnerExist()) {
+                //TODO zakonczenie sprawy
+                return new RunResultPiece(-1, 0);
+            }
             int winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false);
 
-            //TODO oblsuga wygranej
+            if (winner == 1) {
+                //wygrana
+                DatastoreProfile datastoreProfile = getDatastoreProfile(user);
+                if (datastoreProfile == null)
+                    return null;
+                //dodajemy statystyki
+                datastoreProfile.addWinRace();
+                //dodajemy historie uzytkownika
+                DatastoreProfileHistory profileHistory = new DatastoreProfileHistory();
+                profileHistory.setParent(Key.create(DatastoreProfile.class, user.getEmail()));
+                RunResultPiece lastResult = playerRunResult.getResults().get(playerRunResult.getResults().size()-1);
+                float avgSpeed = countAvgSpeed((float)lastResult.getDistance(), (float)lastResult.getTime());
+                profileHistory.setAverageSpeed(avgSpeed);
+                profileHistory.setTotalDistance(lastResult.getDistance());
+                profileHistory.setDateOfRun(new Date());
+                profileHistory.setIsWinner(true);
+                if(isHost)
+                    profileHistory.setRunResult(currentRunInformation.getHostRunResult());
+                else
+                    profileHistory.setRunResult(currentRunInformation.getOpponentRunResult());
+                //dodajemy historie ogolna
+                DatastoreTotalHistory totalHistory = new DatastoreTotalHistory();
+                totalHistory.setAverageSpeed(avgSpeed);
+                totalHistory.setTotalDistance(lastResult.getDistance());
+                if(isHost)
+                    totalHistory.setRunResult(currentRunInformation.getHostRunResult());
+                else
+                    totalHistory.setRunResult(currentRunInformation.getOpponentRunResult());
+                //zapisujemy do bazy
+                currentRunInformation.setWinnerExist(true);
+                ofy().save().entities(datastoreProfile, profileHistory, totalHistory, currentRunInformation).now();
 
-            syncCache.put(currentRunInformation.getHostLogin(), currentRunInformation);
-            if(new Date().getTime() - currentRunInformation.getLastDatastoreSavedTime().getTime() > 1000*30) {
-                currentRunInformation.setLastDatastoreSavedTime(new Date());
-                ofy().save().entity(currentRunInformation).now();
+                cancelCurrentRun(user);
+                return new RunResultPiece(-1, 1);
             }
 
-            if(isHost)
-                return makePrediction(currentRunInformation, true, forecast);
-            else
-                return makePrediction(currentRunInformation, false, forecast);
+            if(winner == 2) {
+                //TODO wywolanie odpowiedniego cancelRun
+            }
+            syncCache.put(currentRunInformation.getHostLogin(), currentRunInformation);
+            return makePrediction(currentRunInformation, isHost, forecast);
         }
     }
 
@@ -859,8 +892,6 @@ public class SitAndRunAPI {
         //TODO opis
         //zwraca 0 gdy brak zwyciescy, 1 jesli host, 2 jesli opponent
         if(runWithRand){
-            //TODO zwraca 2 na start???
-/*
             //sprawdzamy czy przekroczylismy dystans wyscigu
             if(host.getResults().get(host.getResults().size()-1).getDistance() > totalDistance) {
                 //sprawdzamy czy pierwsza probka u hosta ktora przekroczyla dystans miala lepszy czas
@@ -889,13 +920,25 @@ public class SitAndRunAPI {
                 return 2;
             } else {
                 //jesli nie przekroczylismy dystansu sprawdzamy czy nie przgralismy
-                if(host.getResults().get(host.getResults().size()-1).getTime() > opponent.getResults().get(host.getResults().size()-1).getTime())
+                if(host.getResults().get(host.getResults().size()-1).getTime() > opponent.getResults().get(opponent.getResults().size()-1).getTime())
                     return 2;
                 return 0;
             }
-*/
-        }else {
 
+        }else {
+            //sprawdzamy czy nasz przeciwnik przekroczyl linie mety
+            //tak:
+                //przegralismy
+            //nie:
+                //sprawdzamy czy przekroczylismy dystans calego wyscigu
+                //przekroczylismy:
+                    //wygrana
+                //nie przekroczylismy:
+                    //sprawdzamy czy ostatnie dane naszego przeciwnika sa swiezsze niz z przed 60 sekund
+                    //sa:
+                        //wyscig nie rozstrzygniety zwracamy 0
+                    //nie sa (ponad 60 sekund temu dawal znaki zycia):
+                        //traktujemy to jako wygrana
         }
         return 0;
     }

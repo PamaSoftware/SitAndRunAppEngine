@@ -34,6 +34,7 @@ public class CurrentRunInformation implements Serializable{
     Preferences hostPreferences;
     //uif this is true and you will cancel this run system will also change statistics
     boolean started = false;
+    boolean winnerExist = false;
 
     public CurrentRunInformation() {
     }
@@ -44,6 +45,14 @@ public class CurrentRunInformation implements Serializable{
 
     public Date getCreateTime() {
         return createTime;
+    }
+
+    public void setWinnerExist(boolean winnerExist) {
+        this.winnerExist = winnerExist;
+    }
+
+    public boolean isWinnerExist() {
+        return winnerExist;
     }
 
     public void setHostRunResultId() {
