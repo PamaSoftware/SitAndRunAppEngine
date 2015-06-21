@@ -25,6 +25,7 @@ import software.pama.users.Profile;
 import software.pama.utils.Constants;
 import software.pama.utils.DateHelper;
 import software.pama.utils.Preferences;
+import software.pama.utils.RunStartInfo;
 import software.pama.validation.Validator;
 import software.pama.wrapped.WrappedBoolean;
 import software.pama.wrapped.WrappedInteger;
@@ -206,7 +207,7 @@ public class SitAndRunAPI {
      * @return -1 - blad, 0 - jesli oczekujemy, >0 - czas do startu wyscigu
      */
     @ApiMethod(name = "startRunWithFriend", path = "startRunWithFriend")
-    public WrappedInteger startRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
+    public RunStartInfo startRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
         //Sprawdzenie poprawnosci parametrow
         //wyciagamy nasz profil z bazy
         //sprawdzamy czy istnieje nasz bieg pod kluczem "runMatch:ourLogin"
@@ -218,10 +219,10 @@ public class SitAndRunAPI {
         //tworzymy nowy wpis z biegiem pod kluczem currentRun:login
         //zwracamy czas do startu (bazowy pomniejszony o czas jaki uplynal od czasu dolaczenia przeciwnika do biegu)
         if(!Validator.isPreferencesCorrect(preferences))
-            return new WrappedInteger(-1);
+            return new RunStartInfo(-1,-1);
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
-            return new WrappedInteger(-1);
+            return new RunStartInfo(-1,-1);
         cancelAllActiveUserRuns(user);
         RunMatcher runMatcher = (RunMatcher) syncCache.get("runMatch:".concat(ourProfile.getLogin()));
         if(runMatcher == null) {
@@ -229,11 +230,11 @@ public class SitAndRunAPI {
             query = query.filter("hostLogin =",ourProfile.getLogin());
             runMatcher = query.first().now();
             if(runMatcher == null)
-                return new WrappedInteger(-1);
+                return new RunStartInfo(-1,-1);
             syncCache.put("runMatch:".concat(ourProfile.getLogin()), runMatcher);
         }
         if(!runMatcher.isComplete())
-            return new WrappedInteger(0);
+            return new RunStartInfo(-1, 0);
         CurrentRunInformation currentRunInformation = new CurrentRunInformation();
         currentRunInformation.setHostLogin(runMatcher.getHostLogin());
         currentRunInformation.setOpponentLogin(runMatcher.getOpponentLogin());
@@ -252,7 +253,7 @@ public class SitAndRunAPI {
         syncCache.delete("runMatch:".concat(ourProfile.getLogin()));
         syncCache.put(ourProfile.getLogin(), currentRunInformation);
         int d = (int) DateHelper.getDateDiff(acceptByOpponentDate, new Date(), TimeUnit.SECONDS);
-        return new WrappedInteger(40 - d);
+        return new RunStartInfo(currentRunInformation.getDistance(), 40-d);
     }
 
     /**
@@ -262,7 +263,7 @@ public class SitAndRunAPI {
      * @return -1 - blad, >0 - ustalony dystans
      */
     @ApiMethod(name = "joinRunWithFriend", path = "joinRunWithFriend")
-    public WrappedInteger joinRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
+    public RunStartInfo joinRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
         //Sprawdzenie poprawnosci parametrow
         //wyciagamy nasz profil z bazy
         //wyciagamy z bazy wpis gdzie widnieje nasz login jako opponent
@@ -271,15 +272,15 @@ public class SitAndRunAPI {
         //uzupelniamy wyciagniety wpis, po czym zapisujemy go do bazy i do memcache pod "runwithfriend:login"
         //zwracamy ustalony dystans
         if(!Validator.isPreferencesCorrect(preferences))
-            return new WrappedInteger(-1);
+            return new RunStartInfo(-1,-1);
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
-            return new WrappedInteger(-1);
+            return new RunStartInfo(-1,-1);
         Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("opponentLogin");
         query = query.filter("opponentLogin =",ourProfile.getLogin());
         List<RunMatcher> runMatcherList = query.list();
         if(runMatcherList == null)
-            return new WrappedInteger(-2);
+            return new RunStartInfo(-1,-2);
         RunMatcher newestRun = null;
         Iterator<RunMatcher> iterator = runMatcherList.iterator();
         while(iterator.hasNext()) {
@@ -293,19 +294,19 @@ public class SitAndRunAPI {
         }
         //To nigdy nie powinno miec miejsce, napisane, zeby kompilator nie mial watpliwosci
         if(newestRun == null)
-            return new WrappedInteger(-3);
+            return new RunStartInfo(-1,-3);
         runMatcherList.remove(newestRun);
         ofy().delete().entities(runMatcherList).now();
         int distance = countDistance(preferences, newestRun.getHostPreferences());
         if(distance < 0)
-            return new WrappedInteger(-4);
+            return new RunStartInfo(-1,-4);
         newestRun.setDistance(distance);
         newestRun.setAcceptByOpponentDate(new Date());
         newestRun.setComplete(true);
         ofy().save().entity(newestRun).now();
         syncCache.put("runMatch:".concat(newestRun.getHostLogin()), newestRun);
         syncCache.put("whoIsHostInMyRun:".concat(ourProfile.getLogin()), newestRun.getHostLogin());
-        return new WrappedInteger(distance);
+        return new RunStartInfo(distance,40);
     }
 
     /**
@@ -555,7 +556,86 @@ public class SitAndRunAPI {
             Key playerKey;
             Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
             Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
-            Map<Key<RunResultDatastore>, RunResultDatastore> resultRunMap = ofy().load().keys(hostKey, opponentKey);
+
+            //proba wziecia wpisow z memcache
+            Map<Key<RunResultDatastore>, RunResultDatastore> resultRunMap = new Map<Key<RunResultDatastore>, RunResultDatastore>() {
+                @Override
+                public int size() {
+                    return 0;
+                }
+
+                @Override
+                public boolean isEmpty() {
+                    return false;
+                }
+
+                @Override
+                public boolean containsKey(Object key) {
+                    return false;
+                }
+
+                @Override
+                public boolean containsValue(Object value) {
+                    return false;
+                }
+
+                @Override
+                public RunResultDatastore get(Object key) {
+                    return null;
+                }
+
+                @Override
+                public RunResultDatastore put(Key<RunResultDatastore> key, RunResultDatastore value) {
+                    return null;
+                }
+
+                @Override
+                public RunResultDatastore remove(Object key) {
+                    return null;
+                }
+
+                @Override
+                public void putAll(Map<? extends Key<RunResultDatastore>, ? extends RunResultDatastore> m) {
+
+                }
+
+                @Override
+                public void clear() {
+
+                }
+
+                @Override
+                public Set<Key<RunResultDatastore>> keySet() {
+                    return null;
+                }
+
+                @Override
+                public Collection<RunResultDatastore> values() {
+                    return null;
+                }
+
+                @Override
+                public Set<Entry<Key<RunResultDatastore>, RunResultDatastore>> entrySet() {
+                    return null;
+                }
+            };
+            RunResultDatastore hostRunResultDatastore = (RunResultDatastore) syncCache.get("RunResult:".concat(hostKey.toString()));
+            RunResultDatastore oppponentRunResultDatastore = (RunResultDatastore) syncCache.get("RunResult:".concat(opponentKey.toString()));
+            if(hostRunResultDatastore == null && oppponentRunResultDatastore == null) {
+                resultRunMap = ofy().load().keys(hostKey, opponentKey);
+            } else if (hostRunResultDatastore == null) {
+                RunResultDatastore runResultDatastore = (RunResultDatastore) ofy().load().key(hostKey).now();
+                resultRunMap.put(hostKey, runResultDatastore);
+                resultRunMap.put(opponentKey, oppponentRunResultDatastore);
+            } else if (oppponentRunResultDatastore == null) {
+                RunResultDatastore runResultDatastore = (RunResultDatastore) ofy().load().key(opponentKey).now();
+                resultRunMap.put(hostKey, hostRunResultDatastore);
+                resultRunMap.put(opponentKey, runResultDatastore);
+            } else {
+                resultRunMap.put(hostKey, hostRunResultDatastore);
+                resultRunMap.put(opponentKey, oppponentRunResultDatastore);
+            }
+
             if(isHost) {
                 playerKey = hostKey;
                 playerRunResult = resultRunMap.get(hostKey).getRunResult();
@@ -575,8 +655,13 @@ public class SitAndRunAPI {
                 playerRunResult.addResults(runResult.getResults());
             }
             resultRunMap.get(playerKey).setRunResult(playerRunResult);
-            //TODO po refaktoryzacji zapisywanie do bazy raz na jakis czas
             ofy().save().entity(resultRunMap.get(playerKey)).now();
+
+            syncCache.put("RunResult:".concat(playerKey.toString()), resultRunMap.get(playerKey));
+            if(new Date().getTime() - resultRunMap.get(playerKey).getLastDatastoreSavedTime().getTime() > 1000*30) {
+                resultRunMap.get(playerKey).setLastDatastoreSavedTime(new Date());
+                ofy().save().entity(resultRunMap.get(playerKey)).now();
+            }
 
             if(currentRunInformation.isWinnerExist()) {
                 //dodanie statystyk
@@ -1001,8 +1086,42 @@ public class SitAndRunAPI {
     }
 
     private int countDistance(Preferences p1, Preferences p2) {
-        //TODO
-        return 10;
+        //Sprawdzamy czy jest czesc wspolna
+        //brak zwracamy -1
+        //zapisujemy ramy czesci wspolnej
+        //jesli nasza aspiracja rezerwacja ma rozne zwroty to zwracamy srodek z czesci wspolnej
+        //jesli te same to zwracamy albo jedna skrajna czesc lub druga w zaleznosci od zwrotu aspiracji
+        int maxP1 = Math.max(p1.getAspiration(), p1.getReservation());
+        int minP1 = Math.min(p1.getAspiration(), p1.getReservation());
+        int maxP2 = Math.max(p2.getAspiration(), p2.getReservation());
+        int minP2 = Math.min(p2.getAspiration(), p2.getReservation());
+        int commonMax = Math.min(maxP1, maxP2);
+        int commonMin = Math.max(minP1, minP2);
+        if (commonMax < commonMin)
+            return -1;
+        //sprawdzanie kierunku aspiracji
+        int apirationDirectionP1;
+        if(p1.getAspiration() > p1.getReservation())
+            apirationDirectionP1 = 1;
+        else
+            apirationDirectionP1 = -1;
+
+        int apirationDirectionP2;
+        if(p2.getAspiration() > p2.getReservation())
+            apirationDirectionP2 = 1;
+        else
+            apirationDirectionP2 = -1;
+
+        if(apirationDirectionP1 + apirationDirectionP2 == 0) {
+            //oznacza rozne kierunki wiec zwracamy srednia z czesci wspolnej
+            return (commonMax + commonMin)/2;
+        } else if (apirationDirectionP1 == -1) {
+            //aspiracja malejaca
+            return commonMin;
+        } else {
+            return commonMax;
+
+        }
     }
 
     private boolean checkIfLoginExist(String login) {
