@@ -29,6 +29,7 @@ import software.pama.validation.Validator;
 import software.pama.wrapped.WrappedBoolean;
 import software.pama.wrapped.WrappedInteger;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -519,7 +520,7 @@ public class SitAndRunAPI {
             }
             currentRunInformation.setHostRunResult(hostRunResult);
 
-            int winner = checkWhoIsTheWinner(hostRunResult, currentRunInformation.getOpponentRunResult(), currentRunInformation.getDistance(), true);
+            int winner = checkWhoIsTheWinner(hostRunResult, currentRunInformation.getOpponentRunResult(), currentRunInformation.getDistance(), true, true);
 
             if(winner == 2) {
                 //przegrana
@@ -646,7 +647,11 @@ public class SitAndRunAPI {
                 //TODO zakonczenie sprawy
                 return new RunResultPiece(-1, 0);
             }
-            int winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false);
+            int winner;
+            if(isHost)
+                winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false, true);
+            else
+                winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false, false);
 
             if (winner == 1) {
                 //wygrana
@@ -781,47 +786,98 @@ public class SitAndRunAPI {
             Bieg ze znajomym:
         Rozpatrujemy przewidywanie dla niehosta (czyli analizujemy bieg hosta)
          */
-        int hostRunPiecesSize = currentRunInformation.getHostRunResult().getResults().size();
-        int opponentRunPiecesSize = currentRunInformation.getOpponentRunResult().getResults().size();
 
-        if(predictionForHost) {
-            if(currentRunInformation.isRunWithRandom()) {
-                int lastHostTime = currentRunInformation.getHostRunResult().getResults().get(hostRunPiecesSize - 1).getTime();
-                int predictionTime = lastHostTime + forecast;
-                //sprawdzamy czy nie przegralismy juz w tym momencie
-                //czy ostatni element biegu (bieg z obcym wiec bieg kompletny) nie jest wczesniej niz nasz ostatni element.
-                if(currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1).getTime() <= lastHostTime)
-                    return currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1);
-                int i;
-                for(i = 0; i<opponentRunPiecesSize; ++i) {
-                    if(currentRunInformation.getOpponentRunResult().getResults().get(i).getTime() > predictionTime)
-                        break;
-                }
-                if(i < 2)
-                    return new RunResultPiece(0,0);
-                //jesli petla nie zakonczyla sie na breaku (czyli przy naszej predykcji przeciwnik juz osiagnal mete)
-                if(i == opponentRunPiecesSize) {
-                    predictionTime = lastHostTime;
-                    //dekrementujemy, zeby nie wyjsc poza zakres
-                    i--;
-                }
-                //pomiedzy tymi kawalkami rozpatrujemy
-                RunResultPiece piece1 = currentRunInformation.getOpponentRunResult().getResults().get(i-1);
-                RunResultPiece piece2 = currentRunInformation.getOpponentRunResult().getResults().get(i);
-                float t1, t2, t, d1, d2, x;
-                t1 = (float) piece1.getTime();
-                t2 = (float) piece2.getTime();
-                t = (float) predictionTime;
-                d1 = (float) piece1.getDistance();
-                d2 = (float) piece2.getDistance();
-                x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
-                return new RunResultPiece((int) x, (int) t);
-            } else {
+        if(currentRunInformation.isRunWithRandom()) {
+            int hostRunPiecesSize = currentRunInformation.getHostRunResult().getResults().size();
+            int opponentRunPiecesSize = currentRunInformation.getOpponentRunResult().getResults().size();
+            int lastHostTime = currentRunInformation.getHostRunResult().getResults().get(hostRunPiecesSize - 1).getTime();
+            int predictionTime = lastHostTime + forecast;
+            //sprawdzamy czy nie przegralismy juz w tym momencie
+            //czy ostatni element biegu (bieg z obcym wiec bieg kompletny) nie jest wczesniej niz nasz ostatni element.
+            if(currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1).getTime() <= lastHostTime)
+                return currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1);
+            int i;
+            for(i = 0; i<opponentRunPiecesSize; ++i) {
+                if(currentRunInformation.getOpponentRunResult().getResults().get(i).getTime() > predictionTime)
+                    break;
             }
+            if(i < 2)
+                return new RunResultPiece(0,0);
+            //jesli petla nie zakonczyla sie na breaku (czyli przy naszej predykcji przeciwnik juz osiagnal mete)
+            if(i == opponentRunPiecesSize) {
+                predictionTime = lastHostTime;
+                //dekrementujemy, zeby nie wyjsc poza zakres
+                i--;
+            }
+            //pomiedzy tymi kawalkami rozpatrujemy
+            RunResultPiece piece1 = currentRunInformation.getOpponentRunResult().getResults().get(i-1);
+            RunResultPiece piece2 = currentRunInformation.getOpponentRunResult().getResults().get(i);
+            float t1, t2, t, d1, d2, x;
+            t1 = (float) piece1.getTime();
+            t2 = (float) piece2.getTime();
+            t = (float) predictionTime;
+            d1 = (float) piece1.getDistance();
+            d2 = (float) piece2.getDistance();
+            x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
+            return new RunResultPiece((int) x, (int) t);
         } else {
+            //conajmniej 2 elementy u naszego przeciwnika
+            //jesli pytanie dotyczy czasu ktory zawiera sie pomiedzy elementami przeciwnika
+            //tak: wyliczamy na podstawie tych 2 elementow jego pozycje
+            //nie (zapytanie dotyczy czasu jakiego przeciwnik jeszcze nie osiagnal):
+                //na podstawie ostatnich 5 - 2 wpisow (w zaleznosci od tego ile ma) szacujemy jego pozycje
+            Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
+            Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
+            Map<Key<RunResultDatastore>, RunResultDatastore> resultRunMap = ofy().load().keys(hostKey, opponentKey);
+            RunResult playerRunResult;
+            RunResult opponentRunResult;
+            if(predictionForHost) {
+                playerRunResult = resultRunMap.get(hostKey).getRunResult();
+                opponentRunResult = resultRunMap.get(opponentKey).getRunResult();
+            } else {
+                playerRunResult = resultRunMap.get(opponentKey).getRunResult();
+                opponentRunResult = resultRunMap.get(hostKey).getRunResult();
+            }
+            int playerRunResultSize = playerRunResult.getResults().size();
+            int opponentRunResultSize = opponentRunResult.getResults().size();
+            int lastPlayerTime = playerRunResult.getResults().get(playerRunResultSize-1).getTime();
+            int predictionTime = lastPlayerTime + forecast;
+            int i;
+            for(i = 0; i<opponentRunResultSize; ++i) {
+                if(opponentRunResult.getResults().get(i).getTime() > predictionTime)
+                    break;
+            }
+            if(i < 2)
+                return new RunResultPiece(0,0);
+            if(i == opponentRunResultSize) {
+                //jesli petla nie zakonczyla sie na breaku to szacowanie odbywa sie na podstawie 5 - 2 ostatnich elementow przeciwnika
+                i--;
+                //staramy sie siegnac od ostatniego elementu do 5 wstecz lub do mniej jesli elementow jest mniej
+                int firstIndex = i - 5;
+                if(firstIndex > 0)
+                    firstIndex = 0;
+                //wyliczamy srednia predkosc miedzy ostatnimi kawalkami
+                RunResultPiece opponentLastPiece = opponentRunResult.getResults().get(i);
+                RunResultPiece opponentFirstPiece = opponentRunResult.getResults().get(firstIndex);
+                float dt = opponentLastPiece.getTime() - opponentFirstPiece.getTime();
+                float ds = opponentLastPiece.getDistance() - opponentFirstPiece.getDistance();
+                float aV = ds/dt;
+                //zakladamy ze od ostatniego kawalka nasz przeciwnik porusza sie z wyiczona srednia predkoscia
+                float dt2 = predictionTime - opponentLastPiece.getTime();
+                float s = opponentLastPiece.getDistance() + aV*dt2;
+                return new RunResultPiece((int) s, predictionTime);
+            }
+            RunResultPiece piece1 = opponentRunResult.getResults().get(i-1);
+            RunResultPiece piece2 = opponentRunResult.getResults().get(i);
+            float t1, t2, t, d1, d2, x;
+            t1 = (float) piece1.getTime();
+            t2 = (float) piece2.getTime();
+            t = (float) predictionTime;
+            d1 = (float) piece1.getDistance();
+            d2 = (float) piece2.getDistance();
+            x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
+            return new RunResultPiece((int) x, (int) t);
         }
-
-        return new RunResultPiece();
     }
 
     private DatastoreTotalHistory runGenerator(Preferences preferences, float avgSpeed) {
@@ -888,7 +944,7 @@ public class SitAndRunAPI {
         return opponentHistory;
     }
 
-    private int checkWhoIsTheWinner(RunResult host, RunResult opponent, int totalDistance, boolean runWithRand){
+    private int checkWhoIsTheWinner(RunResult host, RunResult opponent, int totalDistance, boolean runWithRand, boolean playerIsHost){
         //TODO opis
         //zwraca 0 gdy brak zwyciescy, 1 jesli host, 2 jesli opponent
         if(runWithRand){
@@ -928,19 +984,39 @@ public class SitAndRunAPI {
         }else {
             //sprawdzamy czy nasz przeciwnik przekroczyl linie mety
             //tak:
-                //przegralismy
+            //przegralismy
             //nie:
-                //sprawdzamy czy przekroczylismy dystans calego wyscigu
-                //przekroczylismy:
-                    //wygrana
-                //nie przekroczylismy:
-                    //sprawdzamy czy ostatnie dane naszego przeciwnika sa swiezsze niz z przed 60 sekund
-                    //sa:
-                        //wyscig nie rozstrzygniety zwracamy 0
-                    //nie sa (ponad 60 sekund temu dawal znaki zycia):
-                        //traktujemy to jako wygrana
+            //sprawdzamy czy przekroczylismy dystans calego wyscigu
+            //przekroczylismy:
+            //wygrana
+            //nie przekroczylismy:
+            //sprawdzamy czy ostatnie dane naszego przeciwnika sa swiezsze niz z przed 60 sekund
+            //sa:
+            //wyscig nie rozstrzygniety zwracamy 0
+            //nie sa (ponad 60 sekund temu dawal znaki zycia):
+            //traktujemy to jako wygrana
+            if (playerIsHost) {
+                if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() > totalDistance)
+                    return 2;
+                if (host.getResults().get(host.getResults().size() - 1).getDistance() > totalDistance) {
+                    return 1;
+                } else {
+                    if ((host.getResults().get(host.getResults().size() - 1).getTime() - opponent.getResults().get(opponent.getResults().size() - 1).getTime()) > 60)
+                        return 1;
+                    return 0;
+                }
+            } else {
+                if (host.getResults().get(host.getResults().size() - 1).getDistance() > totalDistance)
+                    return 2;
+                if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() > totalDistance) {
+                    return 1;
+                } else {
+                    if ((opponent.getResults().get(opponent.getResults().size() - 1).getTime() - host.getResults().get(host.getResults().size() - 1).getTime()) > 60)
+                        return 1;
+                    return 0;
+                }
+            }
         }
-        return 0;
     }
 
     private boolean checkIfRunExistAsNotFinished(String login) {
@@ -1035,7 +1111,7 @@ public class SitAndRunAPI {
             return new WrappedInteger(0);
         } else {
             if(currentRunInformation.getHostLogin() == p.getLogin()) {
-
+                
             } else {
 
             }
@@ -1055,5 +1131,33 @@ public class SitAndRunAPI {
             return false;
         else
             return true;
+    }
+
+    private boolean cancelPairingProcess(User user) throws OAuthRequestException {
+        Profile ourProfile = signIn(user);
+        if(ourProfile == null)
+            return false;
+        Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("opponentLogin");
+        query = query.filter("opponentLogin =",ourProfile.getLogin());
+        List<RunMatcher> runMatcherList = query.list();
+        Query<RunMatcher> query2 = ofy().load().type(RunMatcher.class).order("hostLogin");
+        query2 = query2.filter("hostLogin =",ourProfile.getLogin());
+        List<RunMatcher> runMatcherList2 = query2.list();
+        if(runMatcherList == null && runMatcherList2 == null)
+            return false;
+        if(runMatcherList != null && runMatcherList2 != null) {
+            ofy().delete().entities(runMatcherList, runMatcherList2);
+            return true;
+        }
+        if(runMatcherList != null) {
+            ofy().delete().entities(runMatcherList);
+            return true;
+        }
+        ofy().delete().entities(runMatcherList2);
+        return true;
+    }
+
+    private boolean cancelRuns(User user) {
+        return true;
     }
 }
