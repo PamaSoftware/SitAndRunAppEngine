@@ -23,28 +23,31 @@ public class CurrentRunInformation implements Serializable{
     String hostLogin;
     @Index
     String opponentLogin;
+    //used in run with friend only
     String hostRunResultId;
     String opponentRunResultId;
+    //used in run with random only
     RunResult hostRunResult;
     RunResult opponentRunResult;
     boolean isRunWithRandom;
-    Date createTime;
+    Date createDate;
     Date lastDatastoreSavedTime;
     //used in run with random only
     Preferences hostPreferences;
-    //uif this is true and you will cancel this run system will also change statistics
+    //if this is true and you will cancel this run system will also change statistics
     boolean started = false;
     boolean winnerExist = false;
 
     public CurrentRunInformation() {
+        this.createDate = new Date();
     }
 
-    public void setCreateTime(Date createTime) {
-        this.createTime = createTime;
+    public void setCreateDate(Date createTime) {
+        this.createDate = createTime;
     }
 
-    public Date getCreateTime() {
-        return createTime;
+    public Date getCreateDate() {
+        return createDate;
     }
 
     public void setWinnerExist(boolean winnerExist) {
