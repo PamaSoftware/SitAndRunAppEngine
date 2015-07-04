@@ -126,6 +126,7 @@ public class SitAndRunAPI {
      */
     @ApiMethod(name = "startRunWithRandom", path = "startRunWithRandom")
     public WrappedInteger startRunWithRandom(User user, Preferences preferences) throws OAuthRequestException, BadRequestException{
+        //TODO zwrocic RunStartInfo dystans i czas
         /*
         Opis działania:
         Sprawdzamy czy przekazane parametry sa poprawne.
