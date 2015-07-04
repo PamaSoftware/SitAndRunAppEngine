@@ -205,11 +205,10 @@ public class SitAndRunAPI {
     /**
      * Funkcja sluzaca sprawdzeniu czy mamy sparowany wyscig.
      *
-     * @param preferences - aspiration and reservation
      * @return -1 - blad, 0 - jesli oczekujemy, >0 - czas do startu wyscigu
      */
     @ApiMethod(name = "startRunWithFriend", path = "startRunWithFriend")
-    public RunStartInfo startRunWithFriend(User user, Preferences preferences) throws OAuthRequestException{
+    public RunStartInfo startRunWithFriend(User user) throws OAuthRequestException{
         //Sprawdzenie poprawnosci parametrow
         //wyciagamy nasz profil z bazy
         //sprawdzamy czy istnieje nasz bieg pod kluczem "runMatch:ourLogin"
@@ -220,8 +219,6 @@ public class SitAndRunAPI {
         //usuwamy wpis dotyczacy parowania
         //tworzymy nowy wpis z biegiem pod kluczem currentRun:login
         //zwracamy czas do startu (bazowy pomniejszony o czas jaki uplynal od czasu dolaczenia przeciwnika do biegu)
-        if(!Validator.isPreferencesCorrect(preferences))
-            return new RunStartInfo(-1,-1);
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
             return new RunStartInfo(-1,-1);
