@@ -125,8 +125,7 @@ public class SitAndRunAPI {
      * @return 0 jesli oczekuje, > 0 start wyscigu liczba oznacza ilosc sekund do odliczenia, < 0 jesli blad
      */
     @ApiMethod(name = "startRunWithRandom", path = "startRunWithRandom")
-    public WrappedInteger startRunWithRandom(User user, Preferences preferences) throws OAuthRequestException, BadRequestException{
-        //TODO zwrocic RunStartInfo dystans i czas
+    public RunStartInfo startRunWithRandom(User user, Preferences preferences) throws OAuthRequestException, BadRequestException{
         /*
         Opis działania:
         Sprawdzamy czy przekazane parametry sa poprawne.
@@ -166,7 +165,7 @@ public class SitAndRunAPI {
 
         Random generator = new Random();
         int i = generator.nextInt(30) + 30;
-        return new WrappedInteger(i);
+        return new RunStartInfo(runInfo.getDistance(), i);
     }
 
     /**
