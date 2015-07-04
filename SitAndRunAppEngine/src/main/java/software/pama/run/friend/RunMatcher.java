@@ -25,6 +25,8 @@ public class RunMatcher implements Serializable{
     Date acceptByOpponentDate;
     int distance = 0;
 
+    public RunMatcher() {}
+
     public RunMatcher(String hostLogin, String opponentLogin, Preferences hostPreferences) {
         this.hostLogin = hostLogin;
         this.opponentLogin = opponentLogin;

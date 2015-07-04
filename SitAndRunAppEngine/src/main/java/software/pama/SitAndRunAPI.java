@@ -193,6 +193,8 @@ public class SitAndRunAPI {
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
             return new WrappedBoolean(false);
+        if(friendsLogin.equals(ourProfile.getLogin()))
+            return new WrappedBoolean(false);
         cancelAllActiveUserRunProcesses(user);
         RunMatcher runMatcher = new RunMatcher(ourProfile.getLogin(), friendsLogin, preferences);
         ofy().save().entity(runMatcher).now();
@@ -292,7 +294,7 @@ public class SitAndRunAPI {
             if (newestRun.getCreateDate().before(r.getCreateDate()))
                 newestRun = r;
         }
-        //To nigdy nie powinno miec miejsce, napisane, zeby kompilator nie mial watpliwosci
+        //Sytuacja w ktorej nikt nam nie hostuje gry
         if(newestRun == null)
             return new RunStartInfo(-1,-3);
         runMatcherList.remove(newestRun);
@@ -1137,25 +1139,26 @@ public class SitAndRunAPI {
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
             return false;
+
         Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("opponentLogin");
         query = query.filter("opponentLogin =",ourProfile.getLogin());
         List<RunMatcher> runMatcherList = query.list();
         Query<RunMatcher> query2 = ofy().load().type(RunMatcher.class).order("hostLogin");
         query2 = query2.filter("hostLogin =",ourProfile.getLogin());
         List<RunMatcher> runMatcherList2 = query2.list();
+
         syncCache.delete("runMatch:".concat(ourProfile.getLogin()));
-        if(runMatcherList == null && runMatcherList2 == null)
-            return false;
-        if(runMatcherList != null && runMatcherList2 != null) {
-            ofy().delete().entities(runMatcherList, runMatcherList2);
-            return true;
+
+        boolean isSthDeleted = false;
+        if(!runMatcherList.isEmpty()) {
+            ofy().delete().entities(runMatcherList).now();
+            isSthDeleted = true;
         }
-        if(runMatcherList != null) {
-            ofy().delete().entities(runMatcherList);
-            return true;
+        if(!runMatcherList2.isEmpty()){
+            ofy().delete().entities(runMatcherList2).now();
+            isSthDeleted = true;
         }
-        ofy().delete().entities(runMatcherList2);
-        return true;
+        return isSthDeleted;
     }
 
     private boolean cancelAllActiveUserRuns(User user) throws OAuthRequestException {
