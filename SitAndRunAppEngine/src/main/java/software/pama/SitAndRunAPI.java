@@ -942,6 +942,8 @@ public class SitAndRunAPI {
                 //zakladamy ze od ostatniego kawalka nasz przeciwnik porusza sie z wyiczona srednia predkoscia
                 float dt2 = predictionTime - opponentLastPiece.getTime();
                 float s = opponentLastPiece.getDistance() + aV*dt2;
+                if(s > currentRunInformation.getDistance())
+                    s = currentRunInformation.getDistance() - 1;
                 return new RunResultPiece((int) s, predictionTime);
             }
             RunResultPiece piece1 = opponentRunResult.getResults().get(i-1);
@@ -953,8 +955,6 @@ public class SitAndRunAPI {
             d1 = (float) piece1.getDistance();
             d2 = (float) piece2.getDistance();
             x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
-            if(x > currentRunInformation.getDistance())
-                x =currentRunInformation.getDistance() - 1;
             return new RunResultPiece((int) x, (int) t);
         }
     }

@@ -35,6 +35,8 @@ public class Validator {
         while(iterator.hasNext()) {
             if(lastPiece == null) {
                 lastPiece = iterator.next();
+                if(lastPiece.getDistance() < 0 || lastPiece.getTime() < 0)
+                    return false;
                 continue;
             }
             RunResultPiece currentPiece = iterator.next();
