@@ -375,6 +375,8 @@ public class SitAndRunAPI {
         RunMatcher runMatcher = query3.first().now();
         if(runMatcher == null) {
             currentRunInformation.setStarted(true);
+            syncCache.put(currentRunInformation.getHostLogin(), currentRunInformation);
+            syncCache.put(ourProfile.getLogin(), "whoIsHostInMyRun:".concat(currentRunInformation.getHostLogin()));
             ofy().save().entity(currentRunInformation);
             return new WrappedBoolean(true);
         }
@@ -436,27 +438,27 @@ public class SitAndRunAPI {
         Na podstawie rezultatow przeciwnika i informacji o czasie przewidywania obliczamy pozycje przeciwnika.
         Zwracamy pozycje przeciwnika.
          */
-        if(forecast < 0 || forecast > 30 || !Validator.isRunResultCorrect(runResult))
+        if(!Validator.isForecastCorrect(forecast) || !Validator.isRunResultCorrect(runResult))
             throw new BadRequestException("Bad parameter format");
 
         Profile p = getUserProfile(user);
         if(p == null)
             return null;
 
-        CurrentRunInformation currentRunInformation = (CurrentRunInformation) syncCache.get(p.getLogin());
-        if(currentRunInformation == null) {
-            currentRunInformation = getNotFinishedRunForHost(p.getLogin());
+        //CurrentRunInformation currentRunInformation = (CurrentRunInformation) syncCache.get(p.getLogin());
+        //if(currentRunInformation == null) {
+            CurrentRunInformation currentRunInformation = getNotFinishedRunForHost(p.getLogin());
             if(currentRunInformation == null) {
-                String login= (String) syncCache.get("whoIsHostInMyRun:".concat(p.getLogin()));
-                currentRunInformation = (CurrentRunInformation) syncCache.get(login);
-                if(currentRunInformation == null) {
-                    currentRunInformation = getNotFinishedRunForOpponent(login);
+                //TODO zmienic by wszedzie wpis byl pod currentRunState:Login
+                //String login= (String) syncCache.get("whoIsHostInMyRun:".concat(p.getLogin()));
+                //currentRunInformation = (CurrentRunInformation) syncCache.get(login);
+                //if(currentRunInformation == null) {
+                    currentRunInformation = getNotFinishedRunForOpponent(p.getLogin());
                     if(currentRunInformation == null)
                         return null;
-                }
+                //}
             }
-        }
-
+        //}
         if(currentRunInformation.isRunWithRandom()){
             //uaktualnienie wpisu
             //sprawdzenie wygranej/przegranej
@@ -467,7 +469,7 @@ public class SitAndRunAPI {
                 hostRunResult = new RunResult(runResult.getResults());
             else {
                 RunResultPiece hostLastRunResultPiece = hostRunResult.getResults().get(hostRunResult.getResults().size()-1);
-                RunResultPiece parameterFirstRunResultPiece = runResult.getResults().get(runResult.getResults().size()-1);
+                RunResultPiece parameterFirstRunResultPiece = runResult.getResults().get(0);
                 if(hostLastRunResultPiece.getTime() >= parameterFirstRunResultPiece.getTime())
                     throw new BadRequestException("Run results are redundant");
                 if(hostLastRunResultPiece.getDistance() > parameterFirstRunResultPiece.getDistance())
@@ -544,12 +546,18 @@ public class SitAndRunAPI {
 
             return makePrediction(currentRunInformation, true, forecast);
         } else {
+            //sprawdzenie czy wyscig wystartowal
             //sprawdzenie czy mamy do czynienia z hostem
             //uaktualnienie wpisu
             //sprawdzenie wygranej/przegranej
             //zapis do memcache oraz jesli dawno to do bazy
             //przewidzenie pozycji przeciwnika
+            if (!currentRunInformation.getStarted()) {
+                return new RunResultPiece(-1, -2);
+            }
+
             boolean isHost = currentRunInformation.getHostLogin().equals(p.getLogin());
+
             RunResult playerRunResult;
 
             Key playerKey;
@@ -618,8 +626,11 @@ public class SitAndRunAPI {
                     return null;
                 }
             };
+            //TODO uzycie memcache
+            /*
             RunResultDatastore hostRunResultDatastore = (RunResultDatastore) syncCache.get("RunResult:".concat(hostKey.toString()));
             RunResultDatastore oppponentRunResultDatastore = (RunResultDatastore) syncCache.get("RunResult:".concat(opponentKey.toString()));
+
             if(hostRunResultDatastore == null && oppponentRunResultDatastore == null) {
                 resultRunMap = ofy().load().keys(hostKey, opponentKey);
             } else if (hostRunResultDatastore == null) {
@@ -634,7 +645,10 @@ public class SitAndRunAPI {
                 resultRunMap.put(hostKey, hostRunResultDatastore);
                 resultRunMap.put(opponentKey, oppponentRunResultDatastore);
             }
+            */
 
+
+            resultRunMap = ofy().load().keys(hostKey, opponentKey);
             if(isHost) {
                 playerKey = hostKey;
                 playerRunResult = resultRunMap.get(hostKey).getRunResult();
@@ -642,25 +656,31 @@ public class SitAndRunAPI {
                 playerKey = opponentKey;
                 playerRunResult = resultRunMap.get(opponentKey).getRunResult();
             }
+
+
             if(playerRunResult == null)
                 playerRunResult = new RunResult(runResult.getResults());
             else {
                 RunResultPiece playerLastRunResultPiece = playerRunResult.getResults().get(playerRunResult.getResults().size()-1);
-                RunResultPiece parameterFirstRunResultPiece = runResult.getResults().get(runResult.getResults().size()-1);
+                RunResultPiece parameterFirstRunResultPiece = runResult.getResults().get(0);
                 if(playerLastRunResultPiece.getTime() >= parameterFirstRunResultPiece.getTime())
                     throw new BadRequestException("Run results are redundant");
                 if(playerLastRunResultPiece.getDistance() > parameterFirstRunResultPiece.getDistance())
                     throw new BadRequestException("Run results are wrong");
                 playerRunResult.addResults(runResult.getResults());
             }
+
             resultRunMap.get(playerKey).setRunResult(playerRunResult);
             ofy().save().entity(resultRunMap.get(playerKey)).now();
 
+            //TODO uzycie memcache
+            /*
             syncCache.put("RunResult:".concat(playerKey.toString()), resultRunMap.get(playerKey));
             if(new Date().getTime() - resultRunMap.get(playerKey).getLastDatastoreSavedTime().getTime() > 1000*30) {
                 resultRunMap.get(playerKey).setLastDatastoreSavedTime(new Date());
                 ofy().save().entity(resultRunMap.get(playerKey)).now();
             }
+            */
 
             if(currentRunInformation.isWinnerExist()) {
                 //dodanie statystyk
@@ -699,6 +719,7 @@ public class SitAndRunAPI {
                     syncCache.delete("whoIsHostInMyRun:".concat(p.getLogin()));
                 return new RunResultPiece(-1, 0);
             }
+
             int winner;
             if(isHost)
                 winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false, true);
@@ -744,7 +765,8 @@ public class SitAndRunAPI {
                 ofy().delete().entity(resultRunMap.get(playerKey));
                 return new RunResultPiece(-1, 1);
             }
-            syncCache.put(currentRunInformation.getHostLogin(), currentRunInformation);
+
+            //syncCache.put(currentRunInformation.getHostLogin(), currentRunInformation);
             return makePrediction(currentRunInformation, isHost, forecast);
         }
     }
@@ -871,15 +893,25 @@ public class SitAndRunAPI {
             //tak: wyliczamy na podstawie tych 2 elementow jego pozycje
             //nie (zapytanie dotyczy czasu jakiego przeciwnik jeszcze nie osiagnal):
                 //na podstawie ostatnich 5 - 2 wpisow (w zaleznosci od tego ile ma) szacujemy jego pozycje
+
             Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
             Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
             Map<Key<RunResultDatastore>, RunResultDatastore> resultRunMap = ofy().load().keys(hostKey, opponentKey);
+
             RunResult playerRunResult;
             RunResult opponentRunResult;
             if(predictionForHost) {
+                if(resultRunMap.get(opponentKey) == null)
+                    return new RunResultPiece(0,0);
+                if(resultRunMap.get(opponentKey).getRunResult() == null)
+                    return new RunResultPiece(0,0);
                 playerRunResult = resultRunMap.get(hostKey).getRunResult();
                 opponentRunResult = resultRunMap.get(opponentKey).getRunResult();
             } else {
+                if(resultRunMap.get(hostKey) == null)
+                    return new RunResultPiece(0,0);
+                if(resultRunMap.get(hostKey).getRunResult() == null)
+                    return new RunResultPiece(0,0);
                 playerRunResult = resultRunMap.get(opponentKey).getRunResult();
                 opponentRunResult = resultRunMap.get(hostKey).getRunResult();
             }
@@ -899,7 +931,7 @@ public class SitAndRunAPI {
                 i--;
                 //staramy sie siegnac od ostatniego elementu do 5 wstecz lub do mniej jesli elementow jest mniej
                 int firstIndex = i - 5;
-                if(firstIndex > 0)
+                if(firstIndex < 0)
                     firstIndex = 0;
                 //wyliczamy srednia predkosc miedzy ostatnimi kawalkami
                 RunResultPiece opponentLastPiece = opponentRunResult.getResults().get(i);
@@ -921,6 +953,8 @@ public class SitAndRunAPI {
             d1 = (float) piece1.getDistance();
             d2 = (float) piece2.getDistance();
             x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
+            if(x > currentRunInformation.getDistance())
+                x =currentRunInformation.getDistance() - 1;
             return new RunResultPiece((int) x, (int) t);
         }
     }
@@ -989,19 +1023,19 @@ public class SitAndRunAPI {
     }
 
     private int checkWhoIsTheWinner(RunResult host, RunResult opponent, int totalDistance, boolean runWithRand, boolean playerIsHost){
-        //zwraca 0 gdy brak zwyciescy, 1 jesli host, 2 jesli opponent
+        //zwraca 0 gdy brak zwyciescy, 1 jesli player wygral, 2 jesli opponent
         if(runWithRand){
             //sprawdzamy czy przekroczylismy dystans wyscigu
-            if(host.getResults().get(host.getResults().size()-1).getDistance() > totalDistance) {
+            if(host.getResults().get(host.getResults().size()-1).getDistance() >= totalDistance) {
                 //sprawdzamy czy pierwsza probka u hosta ktora przekroczyla dystans miala lepszy czas
                 //tak: host zwyciesca
                 //nie: sprawdzamy czy ze stosunku pierwszej ktora przekroczyla wraz z ostatnia ktora tego nie dokonala jak wyliczymy czas dla osiagniecia zadanego dystansu to czy osiagnal zwyciestwo
                 int i;
                 for(i = 0; i < host.getResults().size(); ++i) {
-                    if(host.getResults().get(i).getDistance() > totalDistance)
+                    if(host.getResults().get(i).getDistance() >= totalDistance)
                         break;
                 }
-                if(host.getResults().get(i).getTime() < opponent.getResults().get(host.getResults().size()-1).getTime())
+                if(host.getResults().get(i).getTime() < opponent.getResults().get(opponent.getResults().size()-1).getTime())
                     return 1;
 
                 RunResultPiece piece1 = host.getResults().get(i-1);
@@ -1014,7 +1048,7 @@ public class SitAndRunAPI {
                 d2 = (float) piece2.getDistance();
                 t = ((x-d1)*(t2-t1))/(d2-d1) + t1;
 
-                if(t < opponent.getResults().get(host.getResults().size()-1).getTime())
+                if(t < opponent.getResults().get(opponent.getResults().size()-1).getTime())
                     return 1;
                 return 2;
             } else {
@@ -1039,6 +1073,11 @@ public class SitAndRunAPI {
             //nie sa (ponad 60 sekund temu dawal znaki zycia):
             //traktujemy to jako wygrana
             if (playerIsHost) {
+                if(opponent == null){
+                    if(host.getResults().get(host.getResults().size() - 1).getTime() > 15)
+                        return 1;
+                    return 0;
+                }
                 if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() > totalDistance)
                     return 2;
                 if (host.getResults().get(host.getResults().size() - 1).getDistance() > totalDistance) {
@@ -1049,6 +1088,11 @@ public class SitAndRunAPI {
                     return 0;
                 }
             } else {
+                if(host == null) {
+                    if(opponent.getResults().get(opponent.getResults().size() - 1).getTime() > 15)
+                        return 1;
+                    return 0;
+                }
                 if (host.getResults().get(host.getResults().size() - 1).getDistance() > totalDistance)
                     return 2;
                 if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() > totalDistance) {

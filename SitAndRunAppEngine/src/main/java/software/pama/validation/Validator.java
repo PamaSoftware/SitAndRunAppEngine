@@ -44,4 +44,10 @@ public class Validator {
         }
         return true;
     }
+
+    public static boolean isForecastCorrect(int forecast) {
+        if(forecast < 0 || forecast > 30)
+            return false;
+        return true;
+    }
 }
