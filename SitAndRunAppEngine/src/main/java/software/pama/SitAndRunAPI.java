@@ -275,6 +275,7 @@ public class SitAndRunAPI {
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
             return new RunStartInfo(-1,-1);
+        cancelAllActiveUserRuns(user);
         Query<RunMatcher> query = ofy().load().type(RunMatcher.class).order("opponentLogin");
         query = query.filter("opponentLogin =",ourProfile.getLogin());
         List<RunMatcher> runMatcherList = query.list();
@@ -1246,7 +1247,7 @@ public class SitAndRunAPI {
     }
 
     private boolean cancelAllActiveUserRunForOpponent(User user) throws OAuthRequestException {
-        Profile p = getUserProfile(user);
+        DatastoreProfile p = getDatastoreProfile(user);
         if(p == null)
             return false;
         CurrentRunInformation currentRunInformation = getNotFinishedRunForOpponent(p.getLogin());
