@@ -26,6 +26,8 @@ public class Profile implements Serializable {
 
     public Profile(DatastoreProfile DP) {
         setLogin(DP.getLogin());
+        setRaceAmount(DP.getRaceAmount());
+        setWinsAmount(DP.getWinsAmount());
     }
 
     public void setLogin(String login) {
