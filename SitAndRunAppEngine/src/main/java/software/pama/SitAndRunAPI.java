@@ -383,10 +383,10 @@ public class SitAndRunAPI {
         RunMatcher runMatcher = query3.first().now();
         if(runMatcher == null) {
             currentRunInformation.setStarted(true);
-            saveToCacheCurrentRunInformation(currentRunInformation, ourProfile.getLogin());
             //syncCache.put(currentRunInformation.getHostLogin(), currentRunInformation);
             //syncCache.put(ourProfile.getLogin(), "whoIsHostInMyRun:".concat(currentRunInformation.getHostLogin()));
             ofy().save().entity(currentRunInformation);
+            saveToCacheCurrentRunInformation(currentRunInformation, ourProfile.getLogin());
             return new WrappedBoolean(true);
         }
         return new WrappedBoolean(false);
@@ -485,6 +485,17 @@ public class SitAndRunAPI {
 
             int winner = checkWhoIsTheWinner(hostRunResult, currentRunInformation.getOpponentRunResult(), currentRunInformation.getDistance(), true, true);
 
+            if(winner == 0) {
+                if(new Date().getTime() - currentRunInformation.getLastDatastoreSavedTime().getTime() > 1000*30) {
+                    currentRunInformation.setLastDatastoreSavedTime(new Date());
+                    ofy().save().entity(currentRunInformation).now();
+                }
+            } else {
+                currentRunInformation.setLastDatastoreSavedTime(new Date());
+                ofy().save().entity(currentRunInformation).now();
+            }
+            saveToCacheCurrentRunInformation(currentRunInformation, p.getLogin());
+
             if(winner == 2) {
                 //przegrana
                 DatastoreProfile datastoreProfile = getDatastoreProfile(user);
@@ -546,11 +557,7 @@ public class SitAndRunAPI {
             }
 
             //syncCache.put(p.getLogin(), currentRunInformation);
-            if(new Date().getTime() - currentRunInformation.getLastDatastoreSavedTime().getTime() > 1000*30) {
-                currentRunInformation.setLastDatastoreSavedTime(new Date());
-                ofy().save().entity(currentRunInformation).now();
-            }
-            saveToCacheCurrentRunInformation(currentRunInformation, p.getLogin());
+
 
             return makePrediction(currentRunInformation, true, forecast);
         } else {
@@ -568,9 +575,9 @@ public class SitAndRunAPI {
 
             RunResult playerRunResult;
 
-            Key playerKey;
-            Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
-            Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
+            Key<RunResultDatastore> playerKey;
+            Key<RunResultDatastore> hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
+            Key<RunResultDatastore> opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
 
             //proba wziecia wpisow z memcache
             Map<Key<RunResultDatastore>, RunResultDatastore> resultRunMap = new Map<Key<RunResultDatastore>, RunResultDatastore>() {
@@ -656,16 +663,23 @@ public class SitAndRunAPI {
             */
 
             //TODO sprawdzic czy ponizsze linie dzialaja poprawnie, jesli tak to przeniesc schemat do makePrediction
+
+            RunResultDatastore runResultPlayer;
             RunResultDatastore runResultHost = getFromCacheRunResultDatastore(currentRunInformation.getHostLogin());
             RunResultDatastore runResultOpponent = getFromCacheRunResultDatastore(currentRunInformation.getOpponentLogin());
-            if(runResultHost == null)
+            if(runResultHost == null) {
                 runResultHost = (RunResultDatastore) ofy().load().key(hostKey).now();
-            if(runResultOpponent == null)
+                saveToCacheRunResultFromDatastore(currentRunInformation);
+            }
+            if(runResultOpponent == null) {
                 runResultOpponent = (RunResultDatastore) ofy().load().key(opponentKey).now();
-            resultRunMap.put(hostKey, runResultHost);
-            resultRunMap.put(opponentKey, runResultOpponent);
+                saveToCacheRunResultFromDatastore(currentRunInformation);
+            }
+            //resultRunMap.put(hostKey, runResultHost);
+            //resultRunMap.put(opponentKey, runResultOpponent);
 
-            //resultRunMap = ofy().load().keys(hostKey, opponentKey);
+            /*
+            resultRunMap = ofy().load().keys(hostKey, opponentKey);
             if(isHost) {
                 playerKey = hostKey;
                 playerRunResult = resultRunMap.get(hostKey).getRunResult();
@@ -673,7 +687,18 @@ public class SitAndRunAPI {
                 playerKey = opponentKey;
                 playerRunResult = resultRunMap.get(opponentKey).getRunResult();
             }
-
+            */
+            //resultRunMap = ofy().load().keys(hostKey, opponentKey);
+            //TODO zmiana z gory na dol
+            if(isHost) {
+                //playerKey = hostKey;
+                runResultPlayer = runResultHost;
+                playerRunResult = runResultHost.getRunResult();
+            } else {
+                //playerKey = opponentKey;
+                runResultPlayer = runResultOpponent;
+                playerRunResult = runResultOpponent.getRunResult();
+            }
 
             if(playerRunResult == null)
                 playerRunResult = new RunResult(runResult.getResults());
@@ -687,18 +712,23 @@ public class SitAndRunAPI {
                 playerRunResult.addResults(runResult.getResults());
             }
 
-            resultRunMap.get(playerKey).setRunResult(playerRunResult);
-            ofy().save().entity(resultRunMap.get(playerKey)).now();
-            saveToCacheRunResult(resultRunMap.get(playerKey), p.getLogin());
+            //resultRunMap.get(playerKey).setRunResult(playerRunResult);
+            //ofy().save().entity(resultRunMap.get(playerKey)).now();
+            //saveToCacheRunResult(resultRunMap.get(playerKey), p.getLogin());
+            //TODO zmiana z gory na dol
+            runResultPlayer.setRunResult(playerRunResult);
+            //ofy().save().entity(runResultPlayer).now();
 
-            //TODO uzycie memcache zadziej
-            /*
-            syncCache.put("RunResult:".concat(playerKey.toString()), resultRunMap.get(playerKey));
-            if(new Date().getTime() - resultRunMap.get(playerKey).getLastDatastoreSavedTime().getTime() > 1000*30) {
-                resultRunMap.get(playerKey).setLastDatastoreSavedTime(new Date());
-                ofy().save().entity(resultRunMap.get(playerKey)).now();
+            if(currentRunInformation.isWinnerExist()) {
+                runResultPlayer.setLastDatastoreSavedTime(new Date());
+                ofy().save().entity(runResultPlayer).now();
+            } else {
+                if (new Date().getTime() - runResultPlayer.getLastDatastoreSavedTime().getTime() > 1000 * 30) {
+                    runResultPlayer.setLastDatastoreSavedTime(new Date());
+                    ofy().save().entity(runResultPlayer).now();
+                }
             }
-            */
+            saveToCacheRunResult(runResultPlayer, p.getLogin());
 
             if(currentRunInformation.isWinnerExist()) {
                 //dodanie statystyk
@@ -715,22 +745,29 @@ public class SitAndRunAPI {
                 DatastoreProfileHistory profileHistory = new DatastoreProfileHistory();
                 profileHistory.setParent(Key.create(DatastoreProfile.class, user.getEmail()));
 
-                RunResultPiece lastPlayerResult = resultRunMap.get(playerKey).getRunResult().getResults().get(resultRunMap.get(playerKey).getRunResult().getResults().size()-1);
+                //RunResultPiece lastPlayerResult = resultRunMap.get(playerKey).getRunResult().getResults().get(resultRunMap.get(playerKey).getRunResult().getResults().size()-1);
+                //TODO zmiana z gory na dol
+                RunResultPiece lastPlayerResult = runResultPlayer.getRunResult().getResults().get(runResultPlayer.getRunResult().getResults().size()-1);
                 float avgSpeed = countAvgSpeed((float)lastPlayerResult.getDistance(), (float)lastPlayerResult.getTime());
                 profileHistory.setAverageSpeed(avgSpeed);
                 profileHistory.setTotalDistance(lastPlayerResult.getDistance());
                 profileHistory.setDateOfRun(new Date());
                 profileHistory.setIsWinner(false);
-                profileHistory.setRunResult(resultRunMap.get(playerKey).getRunResult());
+                //profileHistory.setRunResult(resultRunMap.get(playerKey).getRunResult());
+                //TODO zmiana z gory na dol
+                profileHistory.setRunResult(runResultPlayer.getRunResult());
                 //dodajemy historie ogolna
                 DatastoreTotalHistory totalHistory = new DatastoreTotalHistory();
                 totalHistory.setAverageSpeed(avgSpeed);
                 totalHistory.setTotalDistance(lastPlayerResult.getDistance());
-                totalHistory.setRunResult(resultRunMap.get(playerKey).getRunResult());
-
+                //totalHistory.setRunResult(resultRunMap.get(playerKey).getRunResult());
+                //TODO zmiana z gory na dol
+                totalHistory.setRunResult(runResultPlayer.getRunResult());
                 //zapisujemy do bazy
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
-                ofy().delete().entities(currentRunInformation, resultRunMap.get(playerKey));
+                //ofy().delete().entities(currentRunInformation, resultRunMap.get(playerKey));
+                //TODO zmiana z gory na dol
+                ofy().delete().entities(currentRunInformation, runResultPlayer);
                 removeFromCacheWholeRunInformation(currentRunInformation);
                 //if(isHost)
                     //syncCache.delete(p.getLogin());
@@ -740,10 +777,17 @@ public class SitAndRunAPI {
             }
 
             int winner;
+            /*
             if(isHost)
                 winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false, true);
             else
                 winner = checkWhoIsTheWinner(resultRunMap.get(hostKey).getRunResult(), resultRunMap.get(opponentKey).getRunResult(), currentRunInformation.getDistance(), false, false);
+            */
+            //TODO zmiana z gory na dol
+            if(isHost)
+                winner = checkWhoIsTheWinner(runResultHost.getRunResult(), runResultOpponent.getRunResult(), currentRunInformation.getDistance(), false, true);
+            else
+                winner = checkWhoIsTheWinner(runResultHost.getRunResult(), runResultOpponent.getRunResult(), currentRunInformation.getDistance(), false, false);
 
             if (winner == 1) {
                 //wygrana
@@ -761,28 +805,23 @@ public class SitAndRunAPI {
                 profileHistory.setTotalDistance(lastResult.getDistance());
                 profileHistory.setDateOfRun(new Date());
                 profileHistory.setIsWinner(true);
-                if(isHost)
-                    profileHistory.setRunResult(currentRunInformation.getHostRunResult());
-                else
-                    profileHistory.setRunResult(currentRunInformation.getOpponentRunResult());
+                profileHistory.setRunResult(playerRunResult);
                 //dodajemy historie ogolna
                 DatastoreTotalHistory totalHistory = new DatastoreTotalHistory();
                 totalHistory.setAverageSpeed(avgSpeed);
                 totalHistory.setTotalDistance(lastResult.getDistance());
-                if(isHost)
-                    totalHistory.setRunResult(currentRunInformation.getHostRunResult());
-                else
-                    totalHistory.setRunResult(currentRunInformation.getOpponentRunResult());
+                totalHistory.setRunResult(playerRunResult);
                 //zapisujemy do bazy
                 currentRunInformation.setWinnerExist(true);
-
                 if(isHost)
                     currentRunInformation.setHostLogin("");
                 else
                     currentRunInformation.setOpponentLogin("");
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory, currentRunInformation).now();
-                ofy().delete().entity(resultRunMap.get(playerKey));
+                //ofy().delete().entity(resultRunMap.get(playerKey));
+                //TODO zmiana z gory na dol
                 removeFromCacheWholeRunInformation(p.getLogin());
+                ofy().delete().entity(runResultPlayer);
                 return new RunResultPiece(-1, 1);
             }
 
@@ -913,7 +952,7 @@ public class SitAndRunAPI {
             //tak: wyliczamy na podstawie tych 2 elementow jego pozycje
             //nie (zapytanie dotyczy czasu jakiego przeciwnik jeszcze nie osiagnal):
                 //na podstawie ostatnich 5 - 2 wpisow (w zaleznosci od tego ile ma) szacujemy jego pozycje
-
+            /*
             Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
             Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
             Map<Key<RunResultDatastore>, RunResultDatastore> resultRunMap = ofy().load().keys(hostKey, opponentKey);
@@ -935,6 +974,39 @@ public class SitAndRunAPI {
                 playerRunResult = resultRunMap.get(opponentKey).getRunResult();
                 opponentRunResult = resultRunMap.get(hostKey).getRunResult();
             }
+            */
+            //TODO zamiana gory na dol
+            Key hostKey = Key.create(RunResultDatastore.class, currentRunInformation.getHostRunResultId());
+            Key opponentKey = Key.create(RunResultDatastore.class, currentRunInformation.getOpponentRunResultId());
+            RunResultDatastore runResultHost = getFromCacheRunResultDatastore(currentRunInformation.getHostLogin());
+            RunResultDatastore runResultOpponent = getFromCacheRunResultDatastore(currentRunInformation.getOpponentLogin());
+            if(runResultHost == null) {
+                runResultHost = (RunResultDatastore) ofy().load().key(hostKey).now();
+                saveToCacheRunResultFromDatastore(currentRunInformation);
+            }
+            if(runResultOpponent == null) {
+                runResultOpponent = (RunResultDatastore) ofy().load().key(opponentKey).now();
+                saveToCacheRunResultFromDatastore(currentRunInformation);
+            }
+            RunResult playerRunResult;
+            RunResult opponentRunResult;
+            if(predictionForHost) {
+                if(runResultOpponent == null)
+                    return new RunResultPiece(0,0);
+                if(runResultOpponent.getRunResult() == null)
+                    return new RunResultPiece(0,0);
+                playerRunResult = runResultHost.getRunResult();
+                opponentRunResult = runResultOpponent.getRunResult();
+            } else {
+                if(runResultHost == null)
+                    return new RunResultPiece(0,0);
+                if(runResultHost.getRunResult() == null)
+                    return new RunResultPiece(0,0);
+                playerRunResult = runResultOpponent.getRunResult();
+                opponentRunResult = runResultHost.getRunResult();
+            }
+
+
             int playerRunResultSize = playerRunResult.getResults().size();
             int opponentRunResultSize = opponentRunResult.getResults().size();
             int lastPlayerTime = playerRunResult.getResults().get(playerRunResultSize-1).getTime();
@@ -1231,12 +1303,12 @@ public class SitAndRunAPI {
         DatastoreProfile p = getDatastoreProfile(user);
         if(p == null)
             return false;
-
+        removeFromCacheWholeRunInformation(p.getLogin());
         CurrentRunInformation currentRunInformation = getNotFinishedRunForHost(p.getLogin());
         //syncCache.delete(p.getLogin());
         if(currentRunInformation == null)
             return true;
-
+        removeFromCacheWholeRunInformation(currentRunInformation);
         if(currentRunInformation.isRunWithRandom()) {
             p.addLoseRace();
             ofy().delete().entity(currentRunInformation).now();
@@ -1269,11 +1341,12 @@ public class SitAndRunAPI {
         DatastoreProfile p = getDatastoreProfile(user);
         if(p == null)
             return false;
+        removeFromCacheWholeRunInformation(p.getLogin());
         CurrentRunInformation currentRunInformation = getNotFinishedRunForOpponent(p.getLogin());
         //syncCache.delete("whoIsHostInMyRun:".concat(p.getLogin()));
         if(currentRunInformation == null)
             return true;
-
+        removeFromCacheWholeRunInformation(currentRunInformation);
         if(currentRunInformation.getStarted())
             p.addLoseRace();
         //usuniecie wpisu hosta
@@ -1344,11 +1417,11 @@ public class SitAndRunAPI {
             syncCache.put("RunWithRandom:".concat(currentRunInformation.getHostLogin()), currentRunInformation);
         else
             syncCache.put("RunWithFriend:".concat(currentRunInformation.getHostLogin()), currentRunInformation);
-        saveToCacheRunResultFromDatastore(currentRunInformation);
+        //saveToCacheRunResultFromDatastore(currentRunInformation);
     }
 
     private void saveToCacheRunResult(RunResultDatastore runResultDatastore, String login) {
-        syncCache.put("RunResult".concat(login), runResultDatastore);
+        syncCache.put("RunResult:".concat(login), runResultDatastore);
     }
 
     private void saveToCacheRunResultFromDatastore(CurrentRunInformation currentRunInformation) {
@@ -1366,7 +1439,7 @@ public class SitAndRunAPI {
         RunResultDatastore runResultDatastore = (RunResultDatastore) ofy().load().key(hostKey).now();
         if(runResultDatastore == null)
             return false;
-        syncCache.put("RunResult".concat(currentRunInformation.getHostLogin()), runResultDatastore);
+        syncCache.put("RunResult:".concat(currentRunInformation.getHostLogin()), runResultDatastore);
         return true;
     }
 
@@ -1376,19 +1449,19 @@ public class SitAndRunAPI {
         RunResultDatastore runResultDatastore = (RunResultDatastore) ofy().load().key(opponentKey).now();
         if(runResultDatastore == null)
             return false;
-        syncCache.put("RunResult".concat(currentRunInformation.getOpponentLogin()), runResultDatastore);
+        syncCache.put("RunResult:".concat(currentRunInformation.getOpponentLogin()), runResultDatastore);
         return true;
     }
 
     private RunResultDatastore getFromCacheRunResultDatastore(String login) {
-        return (RunResultDatastore) syncCache.get("RunResult".concat(login));
+        return (RunResultDatastore) syncCache.get("RunResult:".concat(login));
     }
 
     private void removeFromCacheWholeRunInformation(String login) {
         syncCache.delete(login);
         syncCache.delete("RunWithRandom:".concat(login));
         syncCache.delete("RunWithFriend:".concat(login));
-        syncCache.delete("RunResult".concat(login));
+        syncCache.delete("RunResult:".concat(login));
     }
 
     private void removeFromCacheWholeRunInformation(CurrentRunInformation currentRunInformation) {
@@ -1397,10 +1470,10 @@ public class SitAndRunAPI {
         syncCache.delete(hostLogin);
         syncCache.delete("RunWithRandom:".concat(hostLogin));
         syncCache.delete("RunWithFriend:".concat(hostLogin));
-        syncCache.delete("RunResult".concat(hostLogin));
+        syncCache.delete("RunResult:".concat(hostLogin));
         syncCache.delete(oppLogin);
         syncCache.delete("RunWithRandom:".concat(oppLogin));
         syncCache.delete("RunWithFriend:".concat(oppLogin));
-        syncCache.delete("RunResult".concat(oppLogin));
+        syncCache.delete("RunResult:".concat(oppLogin));
     }
 }
