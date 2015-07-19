@@ -820,8 +820,12 @@ public class SitAndRunAPI {
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory, currentRunInformation).now();
                 //ofy().delete().entity(resultRunMap.get(playerKey));
                 //TODO zmiana z gory na dol
-                removeFromCacheWholeRunInformation(p.getLogin());
-                ofy().delete().entity(runResultPlayer);
+                //removeFromCacheWholeRunInformation(p.getLogin());
+                if(isHost)
+                    removeFromCacheWholeRunInformationForPlayerAndBasicInfoForOpponent(p.getLogin(), currentRunInformation.getOpponentLogin());
+                else
+                    removeFromCacheWholeRunInformationForPlayerAndBasicInfoForOpponent(p.getLogin(), currentRunInformation.getHostLogin());
+                ofy().delete().entity(runResultPlayer).now();
                 return new RunResultPiece(-1, 1);
             }
 
@@ -1170,9 +1174,9 @@ public class SitAndRunAPI {
                         return 1;
                     return 0;
                 }
-                if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() > totalDistance)
+                if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() >= totalDistance)
                     return 2;
-                if (host.getResults().get(host.getResults().size() - 1).getDistance() > totalDistance) {
+                if (host.getResults().get(host.getResults().size() - 1).getDistance() >= totalDistance) {
                     return 1;
                 } else {
                     if ((host.getResults().get(host.getResults().size() - 1).getTime() - opponent.getResults().get(opponent.getResults().size() - 1).getTime()) > 60)
@@ -1185,9 +1189,9 @@ public class SitAndRunAPI {
                         return 1;
                     return 0;
                 }
-                if (host.getResults().get(host.getResults().size() - 1).getDistance() > totalDistance)
+                if (host.getResults().get(host.getResults().size() - 1).getDistance() >= totalDistance)
                     return 2;
-                if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() > totalDistance) {
+                if (opponent.getResults().get(opponent.getResults().size() - 1).getDistance() >= totalDistance) {
                     return 1;
                 } else {
                     if ((opponent.getResults().get(opponent.getResults().size() - 1).getTime() - host.getResults().get(host.getResults().size() - 1).getTime()) > 60)
@@ -1459,6 +1463,14 @@ public class SitAndRunAPI {
 
     private void removeFromCacheWholeRunInformation(String login) {
         syncCache.delete(login);
+        syncCache.delete("RunWithRandom:".concat(login));
+        syncCache.delete("RunWithFriend:".concat(login));
+        syncCache.delete("RunResult:".concat(login));
+    }
+
+    private void removeFromCacheWholeRunInformationForPlayerAndBasicInfoForOpponent(String login, String oppLogin) {
+        syncCache.delete(login);
+        syncCache.delete(oppLogin);
         syncCache.delete("RunWithRandom:".concat(login));
         syncCache.delete("RunWithFriend:".concat(login));
         syncCache.delete("RunResult:".concat(login));
