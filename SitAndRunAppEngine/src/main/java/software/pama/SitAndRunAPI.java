@@ -14,6 +14,7 @@ import com.google.appengine.api.users.User;
 import com.googlecode.objectify.Key;
 import com.googlecode.objectify.cmd.Query;
 import software.pama.administration.Account;
+import software.pama.communication.OpponentPositionInfo;
 import software.pama.run.*;
 import software.pama.datastore.run.CurrentRunInformation;
 import software.pama.datastore.run.RunResultDatastore;
@@ -366,7 +367,7 @@ public class SitAndRunAPI {
      * @return dystans przeciwnika jaki mial po odpowiadajacym czasie
      */
     @ApiMethod(name = "currentRunState", path = "currentRunState")
-    public RunResultPiece currentRunState(User user, RunResult runResult, @Named("forecast") int forecast) throws OAuthRequestException, BadRequestException{
+    public OpponentPositionInfo currentRunState(User user, RunResult runResult, @Named("forecast") int forecast) throws OAuthRequestException, BadRequestException{
         /*
         Opis dzialania:
         Sprawdzenie poprawnosci danych.
@@ -479,7 +480,7 @@ public class SitAndRunAPI {
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
                 CacheOrganizer.removeFromCacheWholeRunInformation(p.getLogin(), syncCache);
                 ofy().delete().entity(currentRunInformation);
-                return new RunResultPiece(-1, 0);
+                return new OpponentPositionInfo(-1, 0);
             }
 
             if (winner == 1) {
@@ -508,7 +509,7 @@ public class SitAndRunAPI {
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
                 CacheOrganizer.removeFromCacheWholeRunInformation(p.getLogin(), syncCache);
                 ofy().delete().entity(currentRunInformation);
-                return new RunResultPiece(-1, 1);
+                return new OpponentPositionInfo(-1, 1);
             }
             return Analyst.makePrediction(currentRunInformation, true, forecast, syncCache);
         } else {
@@ -519,7 +520,7 @@ public class SitAndRunAPI {
             //zapis do memcache oraz jesli dawno to do bazy
             //przewidzenie pozycji przeciwnika
             if (!currentRunInformation.getStarted()) {
-                return new RunResultPiece(-1, -2);
+                return new OpponentPositionInfo(-1, -2);
             }
 
             boolean isHost = currentRunInformation.getHostLogin().equals(p.getLogin());
@@ -667,7 +668,7 @@ public class SitAndRunAPI {
                 ofy().save().entities(datastoreProfile, profileHistory, totalHistory).now();
                 ofy().delete().entities(currentRunInformation, runResultPlayer);
                 CacheOrganizer.removeFromCacheWholeRunInformation(currentRunInformation, syncCache);
-                return new RunResultPiece(-1, 0);
+                return new OpponentPositionInfo(-1, 0);
             }
 
             int winner;
@@ -710,7 +711,7 @@ public class SitAndRunAPI {
                 else
                     CacheOrganizer.removeFromCacheWholeRunInformationForPlayerAndBasicInfoForOpponent(p.getLogin(), currentRunInformation.getHostLogin(), syncCache);
                 ofy().delete().entity(runResultPlayer).now();
-                return new RunResultPiece(-1, 1);
+                return new OpponentPositionInfo(-1, 1);
             }
             return Analyst.makePrediction(currentRunInformation, isHost, forecast, syncCache);
         }

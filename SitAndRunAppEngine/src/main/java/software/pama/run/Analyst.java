@@ -2,6 +2,7 @@ package software.pama.run;
 
 import com.google.appengine.api.memcache.MemcacheService;
 import com.googlecode.objectify.Key;
+import software.pama.communication.OpponentPositionInfo;
 import software.pama.datastore.run.CurrentRunInformation;
 import software.pama.datastore.run.RunResultDatastore;
 
@@ -11,7 +12,7 @@ import static software.pama.datastore.OfyService.ofy;
  * Created by Pawel on 2015-08-08.
  */
 public class Analyst {
-    public static RunResultPiece makePrediction(CurrentRunInformation currentRunInformation, boolean predictionForHost, int forecast, MemcacheService syncCache) {
+    public static OpponentPositionInfo makePrediction(CurrentRunInformation currentRunInformation, boolean predictionForHost, int forecast, MemcacheService syncCache) {
         /*
         Pobieramy rozmiar zebranych wynikow dla hosta i przeciwnika.
         Rozpatrujemy przewidywanie dla hosta (czyli analizujemy bieg jego przeciwnika)
@@ -40,14 +41,14 @@ public class Analyst {
             //sprawdzamy czy nie przegralismy juz w tym momencie
             //czy ostatni element biegu (bieg z obcym wiec bieg kompletny) nie jest wczesniej niz nasz ostatni element.
             if(currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1).getTime() <= lastHostTime)
-                return currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1);
+                return new OpponentPositionInfo(currentRunInformation.getOpponentRunResult().getResults().get(opponentRunPiecesSize-1));
             int i;
             for(i = 0; i<opponentRunPiecesSize; ++i) {
                 if(currentRunInformation.getOpponentRunResult().getResults().get(i).getTime() > predictionTime)
                     break;
             }
             if(i < 2)
-                return new RunResultPiece(0,0);
+                return new OpponentPositionInfo(0,0);
             //jesli petla nie zakonczyla sie na breaku (czyli przy naszej predykcji przeciwnik juz osiagnal mete)
             if(i == opponentRunPiecesSize) {
                 predictionTime = lastHostTime;
@@ -64,7 +65,7 @@ public class Analyst {
             d1 = (float) piece1.getDistance();
             d2 = (float) piece2.getDistance();
             x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
-            return new RunResultPiece((int) x, (int) t);
+            return new OpponentPositionInfo((int) x, (int) t);
         } else {
             //conajmniej 2 elementy u naszego przeciwnika
             //jesli pytanie dotyczy czasu ktory zawiera sie pomiedzy elementami przeciwnika
@@ -88,16 +89,16 @@ public class Analyst {
             RunResult opponentRunResult;
             if(predictionForHost) {
                 if(runResultOpponent == null)
-                    return new RunResultPiece(0,0);
+                    return new OpponentPositionInfo(0,0);
                 if(runResultOpponent.getRunResult() == null)
-                    return new RunResultPiece(0,0);
+                    return new OpponentPositionInfo(0,0);
                 playerRunResult = runResultHost.getRunResult();
                 opponentRunResult = runResultOpponent.getRunResult();
             } else {
                 if(runResultHost == null)
-                    return new RunResultPiece(0,0);
+                    return new OpponentPositionInfo(0,0);
                 if(runResultHost.getRunResult() == null)
-                    return new RunResultPiece(0,0);
+                    return new OpponentPositionInfo(0,0);
                 playerRunResult = runResultOpponent.getRunResult();
                 opponentRunResult = runResultHost.getRunResult();
             }
@@ -112,7 +113,7 @@ public class Analyst {
                     break;
             }
             if(i < 2)
-                return new RunResultPiece(0,0);
+                return new OpponentPositionInfo(0,0);
             if(i == opponentRunResultSize) {
                 //jesli petla nie zakonczyla sie na breaku to szacowanie odbywa sie na podstawie 5 - 2 ostatnich elementow przeciwnika
                 i--;
@@ -131,7 +132,7 @@ public class Analyst {
                 float s = opponentLastPiece.getDistance() + aV*dt2;
                 if(s > currentRunInformation.getDistance())
                     s = currentRunInformation.getDistance() - 1;
-                return new RunResultPiece((int) s, predictionTime);
+                return new OpponentPositionInfo((int) s, predictionTime);
             }
             RunResultPiece piece1 = opponentRunResult.getResults().get(i-1);
             RunResultPiece piece2 = opponentRunResult.getResults().get(i);
@@ -142,7 +143,7 @@ public class Analyst {
             d1 = (float) piece1.getDistance();
             d2 = (float) piece2.getDistance();
             x = ((t-t1)*(d2-d1))/(t2-t1) + d1;
-            return new RunResultPiece((int) x, (int) t);
+            return new OpponentPositionInfo((int) x, (int) t);
         }
     }
 
