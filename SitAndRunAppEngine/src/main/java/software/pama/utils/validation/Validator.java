@@ -1,8 +1,8 @@
-package software.pama.validation;
+package software.pama.utils.validation;
 
 import software.pama.run.RunResult;
 import software.pama.run.RunResultPiece;
-import software.pama.utils.Preferences;
+import software.pama.communication.RunPreferences;
 
 import java.util.Iterator;
 
@@ -10,22 +10,14 @@ import java.util.Iterator;
  * Created by Pawel on 2015-06-18.
  */
 public class Validator {
-    public static boolean isPreferencesCorrect(Preferences preferences) {
-        int difference = preferences.getAspiration() - preferences.getReservation();
+    public static boolean isPreferencesCorrect(RunPreferences runPreferences) {
+        int difference = runPreferences.getAspiration() - runPreferences.getReservation();
         if(difference < 0)
             difference = -difference;
-        return (preferences.getReservation() >= 500 && preferences.getAspiration() >= 500 && difference >= 100);
+        return (runPreferences.getReservation() >= 500 && runPreferences.getAspiration() >= 500 && difference >= 100);
     }
 
     public static boolean isLoginCorrect(String login) {
-        /*
-        Opis dzialania:
-        Sprawdzenie czy login sklada sie tylko i wylacznie z: a-z lub 0-9
-        Tak:
-            Zwracamy true
-        Nie:
-            Zwracamy false
-         */
         return login.matches("[a-z0-9]+");
     }
 

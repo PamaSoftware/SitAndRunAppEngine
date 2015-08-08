@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Created by Pawel on 2015-06-18.
  */
-public class DateHelper {
+public class DateDifferenceCounter {
     /**
      * Get a diff between two dates
      * @param date1 the oldest date

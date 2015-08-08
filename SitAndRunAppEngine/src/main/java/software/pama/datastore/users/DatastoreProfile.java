@@ -1,9 +1,9 @@
-package software.pama.users.datastore;
+package software.pama.datastore.users;
 
 import com.googlecode.objectify.annotation.Entity;
 import com.googlecode.objectify.annotation.Id;
 import com.googlecode.objectify.annotation.Index;
-import software.pama.users.Profile;
+import software.pama.communication.Profile;
 
 /**
  * Created by Pawel on 2015-03-10.

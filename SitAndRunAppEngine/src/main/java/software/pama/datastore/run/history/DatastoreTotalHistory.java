@@ -1,4 +1,4 @@
-package software.pama.users.datastore;
+package software.pama.datastore.run.history;
 
 import com.googlecode.objectify.annotation.Entity;
 import com.googlecode.objectify.annotation.Id;

@@ -1,4 +1,4 @@
-package software.pama.utils;
+package software.pama;
 
 /**
  * Contains the client IDs and scopes for allowed clients consuming your API.
@@ -12,4 +12,6 @@ public class Constants {
   public static final String EMAIL_SCOPE = "https://www.googleapis.com/auth/userinfo.email";
   public static final int ANDROID_APP_SUPPORTED_VERSION = 1;
 
+    public static final int SECONDS_TO_START_RUN = 40;
+    public static final int ACCEPTED_TIME_IN_SECONDS_WITHOUT_RUN_RESULT_SAVING_TO_DATASTORE = 1000*30;
 }

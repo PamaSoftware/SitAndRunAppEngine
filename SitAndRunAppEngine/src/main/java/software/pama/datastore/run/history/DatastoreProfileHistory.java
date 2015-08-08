@@ -1,10 +1,11 @@
-package software.pama.users.datastore;
+package software.pama.datastore.run.history;
 
 import com.googlecode.objectify.Key;
 import com.googlecode.objectify.annotation.Entity;
 import com.googlecode.objectify.annotation.Id;
 import com.googlecode.objectify.annotation.Index;
 import com.googlecode.objectify.annotation.Parent;
+import software.pama.datastore.users.DatastoreProfile;
 import software.pama.run.RunResult;
 
 import java.util.Date;

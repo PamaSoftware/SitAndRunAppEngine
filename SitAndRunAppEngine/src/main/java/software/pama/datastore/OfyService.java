@@ -1,14 +1,14 @@
-package software.pama.utils;
+package software.pama.datastore;
 
 import com.googlecode.objectify.Objectify;
 import com.googlecode.objectify.ObjectifyService;
 import com.googlecode.objectify.ObjectifyFactory;
-import software.pama.run.datastore.RunResultDatastore;
-import software.pama.run.friend.RunMatcher;
-import software.pama.users.datastore.DatastoreProfile;
-import software.pama.users.datastore.DatastoreProfileHistory;
-import software.pama.users.datastore.DatastoreTotalHistory;
-import software.pama.run.datastore.CurrentRunInformation;
+import software.pama.datastore.run.RunResultDatastore;
+import software.pama.datastore.run.with.friend.RunMatcher;
+import software.pama.datastore.users.DatastoreProfile;
+import software.pama.datastore.run.history.DatastoreProfileHistory;
+import software.pama.datastore.run.history.DatastoreTotalHistory;
+import software.pama.datastore.run.CurrentRunInformation;
 
 /**
  * Created by Pawel on 2015-03-03.

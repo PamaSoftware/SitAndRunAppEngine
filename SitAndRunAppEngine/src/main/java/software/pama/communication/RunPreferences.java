@@ -1,17 +1,17 @@
-package software.pama.utils;
+package software.pama.communication;
 
 import java.io.Serializable;
 
 /**
  * Created by Pawel on 2015-04-03.
  */
-public class Preferences implements Serializable{
+public class RunPreferences implements Serializable{
     private int aspiration;
     private int reservation;
 
-    public Preferences() {}
+    public RunPreferences() {}
 
-    public Preferences(int aspiration, int reservation) {
+    public RunPreferences(int aspiration, int reservation) {
         this.aspiration = aspiration;
         this.reservation = reservation;
     }

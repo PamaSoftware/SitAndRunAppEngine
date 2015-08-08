@@ -1,9 +1,9 @@
-package software.pama.run.friend;
+package software.pama.datastore.run.with.friend;
 
 import com.googlecode.objectify.annotation.Entity;
 import com.googlecode.objectify.annotation.Id;
 import com.googlecode.objectify.annotation.Index;
-import software.pama.utils.Preferences;
+import software.pama.communication.RunPreferences;
 
 import java.io.Serializable;
 import java.util.Date;
@@ -19,7 +19,7 @@ public class RunMatcher implements Serializable{
     String hostLogin;
     @Index
     String opponentLogin;
-    Preferences hostPreferences;
+    RunPreferences hostRunPreferences;
     Boolean complete = false;
     Date createDate;
     Date acceptByOpponentDate;
@@ -27,10 +27,10 @@ public class RunMatcher implements Serializable{
 
     public RunMatcher() {}
 
-    public RunMatcher(String hostLogin, String opponentLogin, Preferences hostPreferences) {
+    public RunMatcher(String hostLogin, String opponentLogin, RunPreferences hostRunPreferences) {
         this.hostLogin = hostLogin;
         this.opponentLogin = opponentLogin;
-        this.hostPreferences = hostPreferences;
+        this.hostRunPreferences = hostRunPreferences;
         createDate = new Date();
     }
 
@@ -58,8 +58,8 @@ public class RunMatcher implements Serializable{
         return hostLogin;
     }
 
-    public Preferences getHostPreferences() {
-        return hostPreferences;
+    public RunPreferences getHostRunPreferences() {
+        return hostRunPreferences;
     }
 
     public Date getCreateDate() {

@@ -1,4 +1,4 @@
-package software.pama.utils;
+package software.pama.communication;
 
 import java.io.Serializable;
 

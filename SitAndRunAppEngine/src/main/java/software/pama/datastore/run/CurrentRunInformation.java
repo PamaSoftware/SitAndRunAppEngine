@@ -1,11 +1,10 @@
-package software.pama.run.datastore;
+package software.pama.datastore.run;
 
 import com.googlecode.objectify.annotation.Entity;
 import com.googlecode.objectify.annotation.Id;
 import com.googlecode.objectify.annotation.Index;
 import software.pama.run.RunResult;
-import software.pama.run.friend.RunMatcher;
-import software.pama.utils.Preferences;
+import software.pama.communication.RunPreferences;
 
 import java.io.Serializable;
 import java.util.Date;
@@ -33,17 +32,13 @@ public class CurrentRunInformation implements Serializable{
     Date createDate;
     Date lastDatastoreSavedTime;
     //used in run with random only
-    Preferences hostPreferences;
+    RunPreferences hostRunPreferences;
     //if this is true and you will cancel this run system will also change statistics
     boolean started = false;
     boolean winnerExist = false;
 
     public CurrentRunInformation() {
         this.createDate = new Date();
-    }
-
-    public void setCreateDate(Date createTime) {
-        this.createDate = createTime;
     }
 
     public Date getCreateDate() {
@@ -106,12 +101,12 @@ public class CurrentRunInformation implements Serializable{
         return opponentLogin;
     }
 
-    public void setHostPreferences(Preferences hostPreferences) {
-        this.hostPreferences = hostPreferences;
+    public void setHostRunPreferences(RunPreferences hostRunPreferences) {
+        this.hostRunPreferences = hostRunPreferences;
     }
 
-    public Preferences getHostPreferences() {
-        return hostPreferences;
+    public RunPreferences getHostRunPreferences() {
+        return hostRunPreferences;
     }
 
     public void setHostRunResult(RunResult hostRunResult) {
