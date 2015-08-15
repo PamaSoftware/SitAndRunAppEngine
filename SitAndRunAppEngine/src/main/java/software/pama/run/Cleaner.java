@@ -54,11 +54,15 @@ public class Cleaner {
         DatastoreProfile p = Account.getDatastoreProfile(user);
         if(p == null)
             return;
+
         CacheOrganizer.removeFromCacheWholeRunInformation(p.getLogin(), syncCache);
         CurrentRunInformation currentRunInformation = Finder.findNotFinishedRunForHost(p.getLogin());
+
         if(currentRunInformation == null)
             return;
+
         CacheOrganizer.removeFromCacheWholeRunInformation(currentRunInformation, syncCache);
+
         if(currentRunInformation.isRunWithRandom()) {
             p.addLoseRace();
             ofy().delete().entity(currentRunInformation).now();
@@ -85,6 +89,7 @@ public class Cleaner {
             }
             return;
         }
+
     }
 
     private static void cancelAllActiveUserRunForOpponent(User user, MemcacheService syncCache) throws OAuthRequestException {

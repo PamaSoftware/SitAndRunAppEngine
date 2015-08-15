@@ -65,15 +65,17 @@ public class CacheOrganizer {
 
     public static void removeFromCacheWholeRunInformation(CurrentRunInformation currentRunInformation, MemcacheService syncCache) {
         String hostLogin = currentRunInformation.getHostLogin();
-        String oppLogin = currentRunInformation.getOpponentLogin();
         syncCache.delete(hostLogin);
         syncCache.delete("RunWithRandom:".concat(hostLogin));
         syncCache.delete("RunWithFriend:".concat(hostLogin));
         syncCache.delete("RunResult:".concat(hostLogin));
-        syncCache.delete(oppLogin);
-        syncCache.delete("RunWithRandom:".concat(oppLogin));
-        syncCache.delete("RunWithFriend:".concat(oppLogin));
-        syncCache.delete("RunResult:".concat(oppLogin));
+        String oppLogin = currentRunInformation.getOpponentLogin();
+        if(oppLogin != null) {
+            syncCache.delete(oppLogin);
+            syncCache.delete("RunWithRandom:".concat(oppLogin));
+            syncCache.delete("RunWithFriend:".concat(oppLogin));
+            syncCache.delete("RunResult:".concat(oppLogin));
+        }
     }
 
     private static boolean saveToCacheRunResultsForHostFromDatastore(CurrentRunInformation currentRunInformation, MemcacheService syncCache) {
