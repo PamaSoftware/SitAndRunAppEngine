@@ -7,6 +7,7 @@ import com.google.api.server.spi.config.Api;
 import com.google.api.server.spi.config.ApiMethod;
 import com.google.api.server.spi.config.Named;
 import com.google.api.server.spi.response.BadRequestException;
+import com.google.api.server.spi.response.UnauthorizedException;
 import com.google.appengine.api.memcache.MemcacheService;
 import com.google.appengine.api.memcache.MemcacheServiceFactory;
 import com.google.appengine.api.oauth.OAuthRequestException;
@@ -53,7 +54,9 @@ public class SitAndRunAPI {
      * @return profil uzytkownika, jesli uzytkownik istnieje, null jesli uzytkownik nie istnieje
      */
     @ApiMethod(name = "signIn", path = "signIn")
-    public Profile signIn(User user) throws OAuthRequestException{
+    public Profile signIn(User user) throws OAuthRequestException, UnauthorizedException{
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         return Account.signIn(user, syncCache);
     }
 
@@ -66,7 +69,9 @@ public class SitAndRunAPI {
      * @throws BadRequestException jesli przekazany login nie spelnia regul
      */
     @ApiMethod(name = "signUp", path = "signUp")
-    public Profile signUp(User user, @Named("login") String login) throws OAuthRequestException, BadRequestException{
+    public Profile signUp(User user, @Named("login") String login) throws OAuthRequestException, BadRequestException, UnauthorizedException{
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         login = login.toLowerCase();
         if(!Validator.isLoginCorrect(login))
             throw new BadRequestException("Bad parameter format");
@@ -79,7 +84,9 @@ public class SitAndRunAPI {
      * @return false jesli blad
      */
     @ApiMethod(name = "deleteAccount", path = "deleteAccount")
-    public WrappedBoolean deleteAccount(User user) throws OAuthRequestException{
+    public WrappedBoolean deleteAccount(User user) throws OAuthRequestException, UnauthorizedException{
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         Cleaner.cancelAllActiveUserRunProcesses(user, syncCache);
         return Account.deleteAccount(user, syncCache);
     }
@@ -91,7 +98,7 @@ public class SitAndRunAPI {
      * @return RunStartInfo(dystans na jakim odbedzie sie bieg, czas do startu wyscigu)
      */
     @ApiMethod(name = "startRunWithRandom", path = "startRunWithRandom")
-    public RunStartInfo startRunWithRandom(User user, RunPreferences runPreferences) throws OAuthRequestException, BadRequestException{
+    public RunStartInfo startRunWithRandom(User user, RunPreferences runPreferences) throws OAuthRequestException, BadRequestException, UnauthorizedException{
         /*
         Opis działania:
         Sprawdzamy czy przekazane parametry sa poprawne.
@@ -114,6 +121,8 @@ public class SitAndRunAPI {
 
         Aplikacja mobilna po otrzymaniu informacji rozpoczyna odliczanie natomiast dopiero wyswietla odliczanie od 10s, powyzej imituje poszukiwanie zawodnika.
          */
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         if(!Validator.isPreferencesCorrect(runPreferences))
             throw new BadRequestException("Bad parameter format");
 
@@ -143,7 +152,7 @@ public class SitAndRunAPI {
      * @return true - everything went well, false - sth went wrong
      */
     @ApiMethod(name = "hostRunWithFriend", path = "hostRunWithFriend")
-    public WrappedBoolean hostRunWithFriend(User user, RunPreferences runPreferences, @Named("friendsLogin") String friendsLogin) throws OAuthRequestException{
+    public WrappedBoolean hostRunWithFriend(User user, RunPreferences runPreferences, @Named("friendsLogin") String friendsLogin) throws OAuthRequestException, UnauthorizedException{
         //Sprawdzenie poprawnosci danych
             //czy preferencje sa poprawne
             //czy login znajomego jest poprawny
@@ -153,6 +162,8 @@ public class SitAndRunAPI {
         //Tworzymy wpis do bazy z wypelnionymi przez nas polami
         //zapisujemy wpis do memcache pod "runMatch:ourLogin"
         //zwracamy true
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         if(!Validator.isPreferencesCorrect(runPreferences) || !Validator.isLoginCorrect(friendsLogin))
             return new WrappedBoolean(false);
         if(!Account.checkIfLoginExist(friendsLogin))
@@ -175,7 +186,7 @@ public class SitAndRunAPI {
      * @return -1 - blad, 0 - jesli oczekujemy, >0 - czas do startu wyscigu
      */
     @ApiMethod(name = "startRunWithFriend", path = "startRunWithFriend")
-    public RunStartInfo startRunWithFriend(User user) throws OAuthRequestException{
+    public RunStartInfo startRunWithFriend(User user) throws OAuthRequestException, UnauthorizedException{
         //Sprawdzenie poprawnosci parametrow
         //wyciagamy nasz profil z bazy
         //sprawdzamy czy istnieje nasz bieg pod kluczem "runMatch:ourLogin"
@@ -186,6 +197,8 @@ public class SitAndRunAPI {
         //usuwamy wpis dotyczacy parowania
         //tworzymy nowy wpis z biegiem pod kluczem currentRun:login
         //zwracamy czas do startu (bazowy pomniejszony o czas jaki uplynal od czasu dolaczenia przeciwnika do biegu)
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
             return new RunStartInfo(-1,-1);
@@ -229,7 +242,7 @@ public class SitAndRunAPI {
      * @return -1 - blad, >0 - ustalony dystans
      */
     @ApiMethod(name = "joinRunWithFriend", path = "joinRunWithFriend")
-    public RunStartInfo joinRunWithFriend(User user, RunPreferences runPreferences) throws OAuthRequestException{
+    public RunStartInfo joinRunWithFriend(User user, RunPreferences runPreferences) throws OAuthRequestException, UnauthorizedException{
         //Sprawdzenie poprawnosci parametrow
         //wyciagamy nasz profil z bazy
         //wyciagamy z bazy wpis gdzie widnieje nasz login jako opponent
@@ -237,6 +250,8 @@ public class SitAndRunAPI {
         //jesli jest porownujemy preferencje i dobieramy dystans
         //uzupelniamy wyciagniety wpis, po czym zapisujemy go do bazy i do memcache pod "runwithfriend:login"
         //zwracamy ustalony dystans
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         if(!Validator.isPreferencesCorrect(runPreferences))
             return new RunStartInfo(-1,-1);
         Profile ourProfile = signIn(user);
@@ -281,7 +296,7 @@ public class SitAndRunAPI {
      * @return true jesli ok, false jesli host stracil polaczenie
      */
     @ApiMethod(name = "checkIfHostIsAlive", path = "checkIfHostIsAlive")
-    public WrappedBoolean checkIfHostIsAlive(User user) throws OAuthRequestException{
+    public WrappedBoolean checkIfHostIsAlive(User user) throws OAuthRequestException, UnauthorizedException{
         //wyciagamy nasz profil z bazy
         //sprawdzamy czy jest dla nas przygotowany wyscig
             //jesli brak to false
@@ -314,6 +329,8 @@ public class SitAndRunAPI {
                     //nasz host sie rozlaczyl - czyscimy caly bieg, zwracamy blad
              //nie istnieje:
                 //zwracamy blad
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         Profile ourProfile = signIn(user);
         if(ourProfile == null)
             return new WrappedBoolean(false);
@@ -354,7 +371,9 @@ public class SitAndRunAPI {
      * @return true jesli wszystko anulowalo sie poprawnie, false jezeli wystapil blad
      */
     @ApiMethod(name = "cancelRun", path = "cancelRun")
-    public WrappedBoolean cancelRun(User user) throws OAuthRequestException{
+    public WrappedBoolean cancelRun(User user) throws OAuthRequestException, UnauthorizedException{
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         Cleaner.cancelAllActiveUserRunProcesses(user, syncCache);
         return new WrappedBoolean(true);
     }
@@ -367,7 +386,7 @@ public class SitAndRunAPI {
      * @return dystans przeciwnika jaki mial po odpowiadajacym czasie
      */
     @ApiMethod(name = "currentRunState", path = "currentRunState")
-    public OpponentPositionInfo currentRunState(User user, RunResult runResult, @Named("forecast") int forecast) throws OAuthRequestException, BadRequestException{
+    public OpponentPositionInfo currentRunState(User user, RunResult runResult, @Named("forecast") int forecast) throws OAuthRequestException, BadRequestException, UnauthorizedException{
         /*
         Opis dzialania:
         Sprawdzenie poprawnosci danych.
@@ -405,6 +424,8 @@ public class SitAndRunAPI {
         Na podstawie rezultatow przeciwnika i informacji o czasie przewidywania obliczamy pozycje przeciwnika.
         Zwracamy pozycje przeciwnika.
          */
+        if(user == null)
+            throw new UnauthorizedException("You are not authorized");
         if(!Validator.isForecastCorrect(forecast) || !Validator.isRunResultCorrect(runResult))
             throw new BadRequestException("Bad parameter format");
 
